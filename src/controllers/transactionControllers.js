@@ -1,0 +1,212 @@
+import { sql } from "../config/db.js";
+
+// GET /api/users/:id/transactions: Fetch all transactions for a user
+export async function getTransactions(req, res) {
+    try {
+        const userId = req.userId;
+        const transactions = await sql`SELECT * FROM user_transactions WHERE user_id = ${userId}`;
+        res.json(transactions);
+    } catch (error) {
+        console.error("Error fetching transactions", error);
+        res.status(500).json({ error: "Failed to fetch transactions" });
+    }
+}
+
+// GET /api/users/:id/transactions/summary: Get summary of user's transactions
+export async function getTransactionSummary(req, res) {
+    try {
+        const userId = req.userId;
+
+        // Get basic summary (total count and amount)
+        const basicSummary = await sql`
+            SELECT
+                COUNT(*) AS total_transactions,
+                COALESCE(SUM(amount), 0) AS total_amount
+            FROM user_transactions
+            WHERE user_id = ${userId}
+        `;
+
+        // Get breakdown by type
+        const typeBreakdown = await sql`
+            SELECT
+                type,
+                COUNT(*) as count,
+                SUM(amount) as total
+            FROM user_transactions
+            WHERE user_id = ${userId}
+            GROUP BY type
+            ORDER BY type
+        `;
+
+        // Get breakdown by category
+        const categoryBreakdown = await sql`
+            SELECT
+                category,
+                COUNT(*) as count,
+                SUM(amount) as total
+            FROM user_transactions
+            WHERE user_id = ${userId} AND category IS NOT NULL
+            GROUP BY category
+            ORDER BY category
+        `;
+
+        // Combine all results
+        const result = {
+            total_transactions: basicSummary[0]?.total_transactions || 0,
+            total_amount: basicSummary[0]?.total_amount || 0,
+            by_type: typeBreakdown,
+            by_category: categoryBreakdown
+        };
+
+        res.json(result);
+    } catch (error) {
+        console.error("Error fetching transactions summary", error);
+        res.status(500).json({ error: "Failed to fetch transactions summary" });
+    }
+}
+
+// GET /api/users/:id/transactions/:transaction_id: Fetch a single transaction by ID
+export async function getTransactionById(req, res) {
+    try {
+        const userId = req.userId;
+        const { transaction_id } = req.params;
+        const transaction = await sql`SELECT * FROM user_transactions WHERE id = ${transaction_id} AND user_id = ${userId}`;
+        res.json(transaction);
+    } catch (error) {
+        console.error("Error fetching transaction", error);
+        res.status(500).json({ error: "Failed to fetch transaction" });
+    }
+}
+
+// POST /api/users/:id/transactions: Create a new transaction for a user
+export async function createTransaction(req, res) {
+    try {
+        const userId = req.userId;
+        console.log(req.body);
+        console.log(req.params);
+        const { amount, currency, type, status, category, tags, merchant, reference,transaction_date } = req.body;
+
+        // Validate required fields: amount must be a positive number
+        if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+            return res.status(400).json({ error: "Amount is required and must be a positive number" });
+        }
+
+        // Validate transaction type
+        if (!type || !['debit', 'credit'].includes(type)) {
+            return res.status(400).json({ error: "Type is required and must be either 'debit' or 'credit'" });
+        }
+
+        // Check if user exists
+        const userExists = await sql`SELECT id FROM users WHERE id = ${userId}`;
+        if (userExists.length === 0) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        // Set default values for optional fields
+        const currencyValue = currency || 'INR';
+        const statusValue = status || 'completed';
+        const tagsValue = tags || [];
+
+        // Validate status if provided
+        if (status && !['pending', 'completed', 'failed'].includes(status)) {
+            return res.status(400).json({ error: "Status must be one of: 'pending', 'completed', 'failed'" });
+        }
+
+        // Insert new transaction into the database
+        const transaction = await sql`
+            INSERT INTO user_transactions (
+                user_id, amount, currency, type, status, category, tags, merchant, reference, transaction_date
+            ) VALUES (
+                ${userId}, ${amount}, ${currencyValue}, ${type}, ${statusValue}, ${category}, ${tagsValue}, ${merchant}, ${reference}, ${transaction_date || 'CURRENT_DATE'}
+            ) RETURNING *
+        `;
+        res.json(transaction);
+    } catch (error) {
+        console.error("Error creating transaction", error); 
+        res.status(500).json({ error: "Failed to create transaction" });
+    }
+}
+
+
+// DELETE /api/users/:id/transactions/:transaction_id: Delete a single transaction by ID
+export async function deleteTransaction(req, res) {
+    try {
+        const userId = req.userId;
+        const { transaction_id } = req.params;
+        
+        // Check if transaction exists and belongs to the user
+        const transactionExists = await sql`SELECT * FROM user_transactions WHERE id = ${transaction_id} AND user_id = ${userId}`;
+        if (transactionExists.length === 0) {
+            return res.status(404).json({ error: "Transaction not found or doesn't belong to this user" });
+        }
+        
+        const result = await sql`DELETE FROM user_transactions WHERE id = ${transaction_id} AND user_id = ${userId} RETURNING *`;
+        
+        res.json({
+            message: "Transaction deleted successfully",
+            deletedTransaction: result[0]
+        });
+    }
+    catch (error) {
+        console.error("Error deleting transaction", error);
+        res.status(500).json({ error: "Failed to delete transaction" });
+    }
+}
+// Bulk delete transactions for a user based on an array of transaction IDs
+export async function bulkDeleteTransactions(req, res) {
+    try {
+        const userId = req.userId;
+        const { transaction_ids } = req.body;
+
+        // Validate input
+        if (!Array.isArray(transaction_ids) || transaction_ids.length === 0) {
+            return res.status(400).json({ error: "transaction_ids must be a non-empty array" });
+        }
+
+        // Check if user exists
+        // const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;
+        // if (userExists.length === 0) {
+        //     return res.status(404).json({ error: "User not found" });
+        // }
+
+        // Check which transactions exist and belong to the user
+        const foundTransactions = await sql`
+            SELECT id FROM user_transactions 
+            WHERE user_id = ${userId} AND id = ANY(${transaction_ids})
+        `;
+
+        const foundIds = foundTransactions.map(t => t.id);
+        const notFoundIds = transaction_ids.filter(tid => !foundIds.includes(tid));
+
+        // Delete the found transactions
+        const deleted = await sql`
+            DELETE FROM user_transactions 
+            WHERE user_id = ${userId} AND id = ANY(${foundIds})
+            RETURNING *
+        `;
+
+        res.json({
+            message: "Bulk delete completed",
+            deletedTransactions: deleted,
+            notFoundTransactionIds: notFoundIds
+        });
+    } catch (error) {
+        console.error("Error bulk deleting transactions", error);
+        res.status(500).json({ error: "Failed to bulk delete transactions" });
+    }
+}
+
+
+// PUT /api/users/:id/transactions/:transaction_id: Update a single transaction by ID
+export async function updateTransaction(req, res) {
+    try {
+        const {  transaction_id } = req.params;
+        const { amount, currency, type, status, category, tags, merchant, reference } = req.body;
+        const transaction = await sql`UPDATE user_transactions SET amount = ${amount}, currency = ${currency}, type = ${type}, status = ${status}, category = ${category}, tags = ${tags}, merchant = ${merchant}, reference = ${reference}, transaction_date = ${req.body.transaction_date || 'CURRENT_DATE'} WHERE id = ${transaction_id}`;
+        res.json(transaction);
+    }
+    catch (error) {
+        console.error("Error updating transaction", error);
+        res.status(500).json({ error: "Failed to update transaction" });
+    }
+}
