@@ -26,14 +26,11 @@ export async function getUserById(req, res) {
 // POST /api/users/: Create a new user
 export async function createUser(req, res) {
     try {
-        const {id, name, email } = req.body;
+        const {id, name, email, phone_number } = req.body;
 
         // Validate required fields
         if (!id || !name || !email) {
-            return res.status(400).json({ error: "ID, Name and email are required" });
-        }
-        if (!name || !email) {
-            return res.status(400).json({ error: "Name and email are required" });
+            return res.status(400).json({ error: "ID, Name (username) and email are required" });
         }
 
         // Validate email format
@@ -42,8 +39,16 @@ export async function createUser(req, res) {
             return res.status(400).json({ error: "Invalid email format" });
         }
 
-        // Insert new user into the database
-        const user = await sql`INSERT INTO users (id, name, email) VALUES (${id}, ${name}, ${email}) RETURNING *`;
+        // Validate phone number format if provided
+        if (phone_number) {
+            const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+            if (!phoneRegex.test(phone_number.replace(/[\s\-\(\)]/g, ''))) {
+                return res.status(400).json({ error: "Invalid phone number format" });
+            }
+        }
+
+        // Insert new user into the database (name is username, no separate username field)
+        const user = await sql`INSERT INTO users (id, name, email, phone_number) VALUES (${id}, ${name}, ${email}, ${phone_number}) RETURNING *`;
         res.json(user);
     } catch (error) {   
         console.error("Error creating user", error);
@@ -54,7 +59,7 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
     try {
         const { id } = req.params;
-        const {  name, email } = req.body;
+        const { name, email, phone_number } = req.body;
         
         // Check if user exists
         const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;
@@ -63,8 +68,8 @@ export async function updateUser(req, res) {
         }
         
         // Validate that at least one field is provided and not empty
-        if ((!name || name.trim() === '') && (!email || email.trim() === '')) {
-            return res.status(400).json({ error: "At least one field (name or email) must be provided and not empty" });
+        if ((!name || name.trim() === '') && (!email || email.trim() === '') && (!phone_number || phone_number.trim() === '')) {
+            return res.status(400).json({ error: "At least one field must be provided and not empty" });
         }
         
         // Validate email format if email is provided
@@ -74,21 +79,36 @@ export async function updateUser(req, res) {
                 return res.status(400).json({ error: "Invalid email format" });
             }
         }
+
+        // Validate phone number format if provided
+        if (phone_number) {
+            const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+            if (!phoneRegex.test(phone_number.replace(/[\s\-\(\)]/g, ''))) {
+                return res.status(400).json({ error: "Invalid phone number format" });
+            }
+        }
         
         // Build dynamic update query based on provided fields
         let updateQuery;
-    
+        const updateFields = [];
+        const updateValues = [];
         
-        if (name && email) {
-            // Both fields provided
-            updateQuery = sql`UPDATE users SET name = ${name}, email = ${email} WHERE id = ${id} RETURNING *`;
-        } else if (name) {
-            // Only name provided
-            updateQuery = sql`UPDATE users SET name = ${name} WHERE id = ${id} RETURNING *`;
-        } else {
-            // Only email provided
-            updateQuery = sql`UPDATE users SET email = ${email} WHERE id = ${id} RETURNING *`;
+        if (name) {
+            updateFields.push('name');
+            updateValues.push(name);
         }
+        if (email) {
+            updateFields.push('email');
+            updateValues.push(email);
+        }
+        if (phone_number) {
+            updateFields.push('phone_number');
+            updateValues.push(phone_number);
+        }
+        
+        // Build the SET clause dynamically
+        const setClause = updateFields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+        updateQuery = sql.unsafe(`UPDATE users SET ${setClause} WHERE id = $${updateFields.length + 1} RETURNING *`, [...updateValues, id]);
         
         const result = await updateQuery;
         

@@ -9,7 +9,8 @@ export async function initDB() {
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) NOT NULL
+                email VARCHAR(255) NOT NULL,
+                phone_number VARCHAR(20)
             )
         `;
 
