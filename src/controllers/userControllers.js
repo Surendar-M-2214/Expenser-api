@@ -26,9 +26,12 @@ export async function getUserById(req, res) {
 // POST /api/users/: Create a new user
 export async function createUser(req, res) {
     try {
-        const { name, email } = req.body;
+        const {id, name, email } = req.body;
 
         // Validate required fields
+        if (!id || !name || !email) {
+            return res.status(400).json({ error: "ID, Name and email are required" });
+        }
         if (!name || !email) {
             return res.status(400).json({ error: "Name and email are required" });
         }
@@ -40,9 +43,9 @@ export async function createUser(req, res) {
         }
 
         // Insert new user into the database
-        const user = await sql`INSERT INTO users (name, email) VALUES (${name}, ${email}) RETURNING *`;
+        const user = await sql`INSERT INTO users (id, name, email) VALUES (${id}, ${name}, ${email}) RETURNING *`;
         res.json(user);
-    } catch (error) {
+    } catch (error) {   
         console.error("Error creating user", error);
         res.status(500).json({ error: "Failed to create user" });
     }
@@ -51,7 +54,7 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
     try {
         const { id } = req.params;
-        const { name, email } = req.body;
+        const {  name, email } = req.body;
         
         // Check if user exists
         const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;

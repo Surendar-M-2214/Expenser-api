@@ -26,34 +26,64 @@ export async function getTransactionSummary(req, res) {
             WHERE user_id = ${userId}
         `;
 
-        // Get breakdown by type
+        // Get breakdown by type with balance calculation (current day only)
         const typeBreakdown = await sql`
             SELECT
                 type,
                 COUNT(*) as count,
                 SUM(amount) as total
             FROM user_transactions
-            WHERE user_id = ${userId}
+            WHERE user_id = ${userId} AND transaction_date = CURRENT_DATE
             GROUP BY type
             ORDER BY type
         `;
 
-        // Get breakdown by category
+        // Get breakdown by category (current day only)
         const categoryBreakdown = await sql`
             SELECT
                 category,
                 COUNT(*) as count,
                 SUM(amount) as total
             FROM user_transactions
-            WHERE user_id = ${userId} AND category IS NOT NULL
+            WHERE user_id = ${userId} AND category IS NOT NULL AND transaction_date = CURRENT_DATE
             GROUP BY category
             ORDER BY category
         `;
+
+        // Calculate today's income and expenses from type breakdown
+        let todayIncome = 0;
+        let todayExpenses = 0;
+
+        typeBreakdown.forEach(item => {
+            if (item.type === 'credit') {
+                todayIncome += parseFloat(item.total || 0);
+            } else if (item.type === 'debit') {
+                todayExpenses += parseFloat(item.total || 0);
+            }
+        });
+
+        // Get total balance (all time)
+        const totalBalanceQuery = await sql`
+            SELECT
+                COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END), 0) as total_income,
+                COALESCE(SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END), 0) as total_expenses
+            FROM user_transactions
+            WHERE user_id = ${userId}
+        `;
+
+        const totalIncome = totalBalanceQuery[0]?.total_income || 0;
+        const totalExpenses = totalBalanceQuery[0]?.total_expenses || 0;
+        const totalBalance = totalIncome - totalExpenses;
 
         // Combine all results
         const result = {
             total_transactions: basicSummary[0]?.total_transactions || 0,
             total_amount: basicSummary[0]?.total_amount || 0,
+            balance: totalBalance,           // Total balance (all time)
+            income: todayIncome,            // Today's income only
+            expenses: todayExpenses,        // Today's expenses only
+            total_income: totalIncome,      // Total income (all time)
+            total_expenses: totalExpenses,  // Total expenses (all time)
             by_type: typeBreakdown,
             by_category: categoryBreakdown
         };
@@ -84,7 +114,7 @@ export async function createTransaction(req, res) {
         const userId = req.userId;
         console.log(req.body);
         console.log(req.params);
-        const { amount, currency, type, status, category, tags, merchant, reference,transaction_date } = req.body;
+        const { amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date } = req.body;
 
         // Validate required fields: amount must be a positive number
         if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
@@ -104,20 +134,14 @@ export async function createTransaction(req, res) {
 
         // Set default values for optional fields
         const currencyValue = currency || 'INR';
-        const statusValue = status || 'completed';
         const tagsValue = tags || [];
-
-        // Validate status if provided
-        if (status && !['pending', 'completed', 'failed'].includes(status)) {
-            return res.status(400).json({ error: "Status must be one of: 'pending', 'completed', 'failed'" });
-        }
 
         // Insert new transaction into the database
         const transaction = await sql`
             INSERT INTO user_transactions (
-                user_id, amount, currency, type, status, category, tags, merchant, reference, transaction_date
+                user_id, amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date
             ) VALUES (
-                ${userId}, ${amount}, ${currencyValue}, ${type}, ${statusValue}, ${category}, ${tagsValue}, ${merchant}, ${reference}, ${transaction_date || 'CURRENT_DATE'}
+                ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receipt_url}, ${receipt_filename}, ${transaction_date || 'CURRENT_DATE'}
             ) RETURNING *
         `;
         res.json(transaction);
