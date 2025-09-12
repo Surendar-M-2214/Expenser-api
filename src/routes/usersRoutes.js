@@ -15,18 +15,22 @@ const upload = multer({
 
 // GET /api/users/: Fetch all users
 router.get("/", getUsers);
-// GET /api/users//:id: Fetch a single user by ID
-router.get("/:id", getUserById);
 // POST /api/users/: Create a new user
 router.post("/", createUser);
-// DELETE /api/users//:id: Delete a user by ID
-router.delete("/:id", deleteUser);
-// PUT /api/users//:id: Update a user by ID
-router.put("/:id", updateUser);
+
+// SPECIFIC ROUTES (must come before parameterized routes)
 // POST /api/users/profile-image: Upload profile image
 router.post("/profile-image", upload.single('file'), uploadProfileImage);
 // PUT /api/users/profile: Update profile details
 router.put("/profile", updateProfile);
+
+// PARAMETERIZED ROUTES (must come after specific routes)
+// GET /api/users/:id: Fetch a single user by ID
+router.get("/:id", getUserById);
+// DELETE /api/users/:id: Delete a user by ID
+router.delete("/:id", deleteUser);
+// PUT /api/users/:id: Update a user by ID
+router.put("/:id", updateUser);
 
 
 export default router;

@@ -8,9 +8,15 @@ export async function initDB() {
         await sql`
             CREATE TABLE IF NOT EXISTS users (
                 id VARCHAR(255) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
+                username VARCHAR(255) UNIQUE,
+                first_name VARCHAR(255),
+                last_name VARCHAR(255),
+                name VARCHAR(255),
                 email VARCHAR(255) NOT NULL,
-                phone_number VARCHAR(20)
+                phone_number VARCHAR(20),
+                profile_image VARCHAR(500),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         `;
 

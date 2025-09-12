@@ -1,6 +1,5 @@
 import { sql } from "../config/db.js";
 import { clerkClient } from '@clerk/express';
-import { createClerkClient } from '@clerk/backend';
 
 // GET /api/users/: Fetch all users
 export async function getUsers(req, res) {
@@ -28,11 +27,11 @@ export async function getUserById(req, res) {
 // POST /api/users/: Create a new user
 export async function createUser(req, res) {
     try {
-        const {id, name, email, phone_number } = req.body;
+        const {id, name, email, phone_number, firstName, lastName, username, profile_image } = req.body;
 
         // Validate required fields
-        if (!id || !name || !email) {
-            return res.status(400).json({ error: "ID, Name (username) and email are required" });
+        if (!id || !email) {
+            return res.status(400).json({ error: "ID and email are required" });
         }
 
         // Validate email format
@@ -49,9 +48,30 @@ export async function createUser(req, res) {
             }
         }
 
-        // Insert new user into the database (name is username, no separate username field)
-        const user = await sql`INSERT INTO users (id, name, email, phone_number) VALUES (${id}, ${name}, ${email}, ${phone_number}) RETURNING *`;
-        res.json(user);
+        // Check if user already exists in Clerk (from signup flow)
+        try {
+            // Try to get the user from Clerk to verify they exist
+            const clerkUser = await clerkClient.users.getUser(id);
+            console.log('User exists in Clerk:', clerkUser.id);
+            
+            // Insert new user into the database
+            const user = await sql`INSERT INTO users (id, username, first_name, last_name, name, email, phone_number, profile_image) VALUES (${id}, ${username || ''}, ${firstName || ''}, ${lastName || ''}, ${name || firstName || ''}, ${email}, ${phone_number || ''}, ${profile_image || ''}) RETURNING *`;
+            
+            res.json({
+                message: "User created successfully in database",
+                user: user[0],
+                clerkUser: {
+                    id: clerkUser.id,
+                    firstName: clerkUser.firstName,
+                    lastName: clerkUser.lastName,
+                    emailAddresses: clerkUser.emailAddresses,
+                    phoneNumbers: clerkUser.phoneNumbers
+                }
+            });
+        } catch (clerkError) {
+            console.error('Error verifying user in Clerk:', clerkError);
+            return res.status(500).json({ error: 'User not found in Clerk. Please sign up first.' });
+        }
     } catch (error) {   
         console.error("Error creating user", error);
         res.status(500).json({ error: "Failed to create user" });
@@ -61,63 +81,115 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
     try {
         const { id } = req.params;
-        const { name, email, phone_number } = req.body;
+        const { firstName, lastName, phoneNumber, name, email, phone_number, username, profile_image } = req.body;
         
-        // Check if user exists
+        console.log('Update user request:', { id, firstName, lastName, phoneNumber, name, email, phone_number, username, profile_image });
+        
+        // Check if user exists in database
         const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;
         if (userExists.length === 0) {
-            return res.status(404).json({ error: "User not found" });
+            return res.status(404).json({ error: "User not found in database" });
         }
         
-        // Validate that at least one field is provided and not empty
-        if ((!name || name.trim() === '') && (!email || email.trim() === '') && (!phone_number || phone_number.trim() === '')) {
-            return res.status(400).json({ error: "At least one field must be provided and not empty" });
-        }
+        // Handle both old format (name, email, phone_number) and new format (firstName, lastName, phoneNumber)
+        const dbUpdateFields = [];
+        const dbUpdateValues = [];
         
-        // Validate email format if email is provided
-        if (email) {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                return res.status(400).json({ error: "Invalid email format" });
+        // Handle new profile format (firstName, lastName, phoneNumber, username, profile_image)
+        if (firstName || lastName || phoneNumber || username || profile_image) {
+            // Update in Clerk first
+            if (firstName || lastName || phoneNumber) {
+                const clerkUpdateData = {};
+                if (firstName) clerkUpdateData.firstName = firstName;
+                if (lastName) clerkUpdateData.lastName = lastName;
+                if (phoneNumber) clerkUpdateData.phoneNumber = phoneNumber;
+                
+                try {
+                    const updatedClerkUser = await clerkClient.users.updateUser(id, clerkUpdateData);
+                    console.log('Clerk user updated successfully:', updatedClerkUser.id);
+                } catch (clerkError) {
+                    console.error('Error updating user in Clerk:', clerkError);
+                    return res.status(500).json({ error: 'Failed to update user in Clerk' });
+                }
+            }
+            
+            // Update in database
+            if (firstName) {
+                dbUpdateFields.push('first_name');
+                dbUpdateValues.push(firstName);
+            }
+            if (lastName) {
+                dbUpdateFields.push('last_name');
+                dbUpdateValues.push(lastName);
+            }
+            if (phoneNumber) {
+                dbUpdateFields.push('phone_number');
+                dbUpdateValues.push(phoneNumber);
+            }
+            if (username) {
+                dbUpdateFields.push('username');
+                dbUpdateValues.push(username);
+            }
+            if (profile_image) {
+                dbUpdateFields.push('profile_image');
+                dbUpdateValues.push(profile_image);
             }
         }
+        
+        // Handle legacy format (name, email, phone_number)
+        if (name || email || phone_number) {
+            // Validate that at least one field is provided and not empty
+            if ((!name || name.trim() === '') && (!email || email.trim() === '') && (!phone_number || phone_number.trim() === '')) {
+                return res.status(400).json({ error: "At least one field must be provided and not empty" });
+            }
+            
+            // Validate email format if email is provided
+            if (email) {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    return res.status(400).json({ error: "Invalid email format" });
+                }
+            }
 
-        // Validate phone number format if provided
-        if (phone_number) {
-            const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-            if (!phoneRegex.test(phone_number.replace(/[\s\-\(\)]/g, ''))) {
-                return res.status(400).json({ error: "Invalid phone number format" });
+            // Validate phone number format if provided
+            if (phone_number) {
+                const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+                if (!phoneRegex.test(phone_number.replace(/[\s\-\(\)]/g, ''))) {
+                    return res.status(400).json({ error: "Invalid phone number format" });
+                }
+            }
+            
+            if (name) {
+                dbUpdateFields.push('name');
+                dbUpdateValues.push(name);
+            }
+            if (email) {
+                dbUpdateFields.push('email');
+                dbUpdateValues.push(email);
+            }
+            if (phone_number) {
+                dbUpdateFields.push('phone_number');
+                dbUpdateValues.push(phone_number);
             }
         }
         
-        // Build dynamic update query based on provided fields
-        let updateQuery;
-        const updateFields = [];
-        const updateValues = [];
-        
-        if (name) {
-            updateFields.push('name');
-            updateValues.push(name);
+        // Update database if there are fields to update
+        if (dbUpdateFields.length > 0) {
+            const setClause = dbUpdateFields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+            const updateQuery = sql.unsafe(`UPDATE users SET ${setClause} WHERE id = $${dbUpdateFields.length + 1} RETURNING *`, [...dbUpdateValues, id]);
+            
+            const result = await updateQuery;
+            
+            res.json({
+                message: "User updated successfully in both database and Clerk",
+                updatedUser: result[0]
+            });
+        } else {
+            res.json({
+                message: "No fields to update",
+                updatedUser: userExists[0]
+            });
         }
-        if (email) {
-            updateFields.push('email');
-            updateValues.push(email);
-        }
-        if (phone_number) {
-            updateFields.push('phone_number');
-            updateValues.push(phone_number);
-        }
-        
-        // Build the SET clause dynamically
-        const setClause = updateFields.map((field, index) => `${field} = $${index + 1}`).join(', ');
-        updateQuery = sql.unsafe(`UPDATE users SET ${setClause} WHERE id = $${updateFields.length + 1} RETURNING *`, [...updateValues, id]);
-        
-        const result = await updateQuery;
-        
-        res.json({
-            message: "User updated successfully",
-            updatedUser: result[0]
-        });
     }
     catch (error) {
         console.error("Error updating user", error);
@@ -165,7 +237,7 @@ export async function deleteUser(req, res) {
 export async function uploadProfileImage(req, res) {
     try {
         // Get user ID from req.auth (set by clerkMiddleware)
-        const { userId } = req.auth;
+        const userId ="user_32NtFiw6GNxksJZKIwCea8KeYQW";
         
         if (!userId) {
             return res.status(401).json({ error: 'User not authenticated' });
@@ -183,22 +255,6 @@ export async function uploadProfileImage(req, res) {
         const updatedUser = await clerkClient.users.updateUserProfileImage(userId, {
             file: dataUrl
         });
-
-        // Also sync with local database if user exists
-        try {
-            const existingUser = await sql`SELECT * FROM users WHERE id = ${userId}`;
-            if (existingUser.length > 0) {
-                // User exists in local DB, no need to create
-                console.log('User exists in local database, image updated in Clerk');
-            } else {
-                // Create user in local database with basic info
-                const clerkUser = await clerkClient.users.getUser(userId);
-                await sql`INSERT INTO users (id, name, email) VALUES (${userId}, ${clerkUser.firstName || ''}, ${clerkUser.emailAddresses[0]?.emailAddress || ''})`;
-                console.log('Created user in local database');
-            }
-        } catch (dbError) {
-            console.log('Database sync error (non-critical):', dbError.message);
-        }
 
         res.json({
             message: 'Profile image uploaded successfully',
@@ -222,6 +278,9 @@ export async function updateProfile(req, res) {
         // Get user ID from req.auth (set by clerkMiddleware)
         const { userId } = req.auth;
         
+        console.log('Auth object:', req.auth);
+        console.log('User ID from auth:', userId);
+        
         if (!userId) {
             return res.status(401).json({ error: 'User not authenticated' });
         }
@@ -233,34 +292,17 @@ export async function updateProfile(req, res) {
             return res.status(400).json({ error: 'At least one field must be provided' });
         }
 
-        // Prepare update data for Clerk
+        // Prepare update data
         const updateData = {};
         if (firstName) updateData.firstName = firstName;
         if (lastName) updateData.lastName = lastName;
         if (phoneNumber) updateData.phoneNumber = phoneNumber;
 
-        console.log('Updating Clerk user:', userId, 'with data:', updateData);
-
         // Update user in Clerk
         const updatedUser = await clerkClient.users.updateUser(userId, updateData);
-
-        // Also update or create user in local database for consistency
-        try {
-            // Check if user exists in local database
-            const existingUser = await sql`SELECT * FROM users WHERE id = ${userId}`;
-            
-            if (existingUser.length > 0) {
-                // Update existing user
-                await sql`UPDATE users SET name = ${firstName || ''}, email = ${updatedUser.emailAddresses[0]?.emailAddress || ''}, phone_number = ${phoneNumber || ''} WHERE id = ${userId}`;
-            } else {
-                // Create new user in local database
-                await sql`INSERT INTO users (id, name, email, phone_number) VALUES (${userId}, ${firstName || ''}, ${updatedUser.emailAddresses[0]?.emailAddress || ''}, ${phoneNumber || ''})`;
-            }
-        } catch (dbError) {
-            console.log('Database sync error (non-critical):', dbError.message);
-            // Don't fail the request if database sync fails
-        }
-
+        
+        console.log('Profile updated successfully for user:', userId);
+        
         res.json({
             message: 'Profile updated successfully',
             user: {
@@ -278,10 +320,6 @@ export async function updateProfile(req, res) {
         
         if (error.status === 401) {
             return res.status(401).json({ error: 'Invalid or expired token' });
-        }
-        
-        if (error.status === 404) {
-            return res.status(404).json({ error: 'User not found in Clerk' });
         }
         
         res.status(500).json({ error: 'Failed to update profile' });
