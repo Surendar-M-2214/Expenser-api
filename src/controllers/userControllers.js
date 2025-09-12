@@ -184,6 +184,22 @@ export async function uploadProfileImage(req, res) {
             file: dataUrl
         });
 
+        // Also sync with local database if user exists
+        try {
+            const existingUser = await sql`SELECT * FROM users WHERE id = ${userId}`;
+            if (existingUser.length > 0) {
+                // User exists in local DB, no need to create
+                console.log('User exists in local database, image updated in Clerk');
+            } else {
+                // Create user in local database with basic info
+                const clerkUser = await clerkClient.users.getUser(userId);
+                await sql`INSERT INTO users (id, name, email) VALUES (${userId}, ${clerkUser.firstName || ''}, ${clerkUser.emailAddresses[0]?.emailAddress || ''})`;
+                console.log('Created user in local database');
+            }
+        } catch (dbError) {
+            console.log('Database sync error (non-critical):', dbError.message);
+        }
+
         res.json({
             message: 'Profile image uploaded successfully',
             imageUrl: updatedUser.imageUrl
@@ -217,14 +233,33 @@ export async function updateProfile(req, res) {
             return res.status(400).json({ error: 'At least one field must be provided' });
         }
 
-        // Prepare update data
+        // Prepare update data for Clerk
         const updateData = {};
         if (firstName) updateData.firstName = firstName;
         if (lastName) updateData.lastName = lastName;
         if (phoneNumber) updateData.phoneNumber = phoneNumber;
 
+        console.log('Updating Clerk user:', userId, 'with data:', updateData);
+
         // Update user in Clerk
         const updatedUser = await clerkClient.users.updateUser(userId, updateData);
+
+        // Also update or create user in local database for consistency
+        try {
+            // Check if user exists in local database
+            const existingUser = await sql`SELECT * FROM users WHERE id = ${userId}`;
+            
+            if (existingUser.length > 0) {
+                // Update existing user
+                await sql`UPDATE users SET name = ${firstName || ''}, email = ${updatedUser.emailAddresses[0]?.emailAddress || ''}, phone_number = ${phoneNumber || ''} WHERE id = ${userId}`;
+            } else {
+                // Create new user in local database
+                await sql`INSERT INTO users (id, name, email, phone_number) VALUES (${userId}, ${firstName || ''}, ${updatedUser.emailAddresses[0]?.emailAddress || ''}, ${phoneNumber || ''})`;
+            }
+        } catch (dbError) {
+            console.log('Database sync error (non-critical):', dbError.message);
+            // Don't fail the request if database sync fails
+        }
 
         res.json({
             message: 'Profile updated successfully',
@@ -243,6 +278,10 @@ export async function updateProfile(req, res) {
         
         if (error.status === 401) {
             return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        
+        if (error.status === 404) {
+            return res.status(404).json({ error: 'User not found in Clerk' });
         }
         
         res.status(500).json({ error: 'Failed to update profile' });
