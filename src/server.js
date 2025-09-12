@@ -20,6 +20,11 @@ const app = express();
 app.use(express.json());
 
 // Configure Clerk middleware with environment variables
+console.log('=== CLERK CONFIG DEBUG ===');
+console.log('CLERK_PUBLISHABLE_KEY exists:', !!process.env.CLERK_PUBLISHABLE_KEY);
+console.log('CLERK_SECRET_KEY exists:', !!process.env.CLERK_SECRET_KEY);
+console.log('CLERK_PUBLISHABLE_KEY preview:', process.env.CLERK_PUBLISHABLE_KEY ? process.env.CLERK_PUBLISHABLE_KEY.substring(0, 20) + '...' : 'Not set');
+
 app.use(clerkMiddleware({
   publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
   secretKey: process.env.CLERK_SECRET_KEY,

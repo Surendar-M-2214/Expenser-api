@@ -5,24 +5,46 @@ import { clerkClient } from '@clerk/express';
 export async function testAuth(req, res) {
     try {
         console.log('=== TEST AUTH DEBUG ===');
-        console.log('Full req.auth object:', req.auth);
+        console.log('req.auth type:', typeof req.auth);
         console.log('req.headers.authorization:', req.headers.authorization ? 'Token present' : 'No token');
+        console.log('Authorization header:', req.headers.authorization);
         
-        const { userId } = req.auth;
+        // Call req.auth() as a function (new Clerk API)
+        const auth = await req.auth();
+        console.log('Auth result:', auth);
+        console.log('Is authenticated:', auth.isAuthenticated);
+        console.log('Token type:', auth.tokenType);
+        console.log('Session status:', auth.sessionStatus);
+        
+        // Try to get token directly
+        try {
+            const token = await auth.getToken();
+            console.log('Token from auth.getToken():', token ? 'Token exists' : 'No token');
+            console.log('Token preview:', token ? token.substring(0, 50) + '...' : 'No token');
+        } catch (tokenError) {
+            console.log('Error getting token:', tokenError);
+        }
+        
+        const { userId } = auth || {};
         console.log('User ID from auth:', userId);
         
         if (!userId) {
             return res.status(401).json({ 
                 error: 'User not authenticated',
-                auth: req.auth,
-                headers: req.headers
+                auth: auth,
+                headers: req.headers,
+                debug: {
+                    isAuthenticated: auth.isAuthenticated,
+                    tokenType: auth.tokenType,
+                    sessionStatus: auth.sessionStatus
+                }
             });
         }
         
         res.json({
             message: 'Authentication successful',
             userId: userId,
-            auth: req.auth,
+            auth: auth,
             timestamp: new Date().toISOString()
         });
     } catch (error) {
@@ -287,11 +309,14 @@ export async function deleteUser(req, res) {
 export async function uploadProfileImage(req, res) {
     try {
         console.log('=== UPLOAD PROFILE IMAGE DEBUG ===');
-        console.log('Full req.auth object:', req.auth);
+        console.log('req.auth type:', typeof req.auth);
         console.log('req.headers.authorization:', req.headers.authorization ? 'Token present' : 'No token');
         
-        // Get user ID from req.auth (set by clerkMiddleware)
-        const { userId } = req.auth;
+        // Call req.auth() as a function (new Clerk API)
+        const auth = await req.auth();
+        console.log('Auth result:', auth);
+        
+        const { userId } = auth || {};
         console.log('User ID from auth:', userId);
         console.log('User ID type:', typeof userId);
         
@@ -299,7 +324,7 @@ export async function uploadProfileImage(req, res) {
             console.log('ERROR: No userId found in req.auth');
             return res.status(401).json({ 
                 error: 'User not authenticated',
-                auth: req.auth,
+                auth: auth,
                 headers: req.headers
             });
         }
@@ -337,11 +362,14 @@ export async function uploadProfileImage(req, res) {
 export async function updateProfile(req, res) {
     try {
         console.log('=== UPDATE PROFILE DEBUG ===');
-        console.log('Full req.auth object:', req.auth);
+        console.log('req.auth type:', typeof req.auth);
         console.log('req.headers.authorization:', req.headers.authorization ? 'Token present' : 'No token');
         
-        // Get user ID from req.auth (set by clerkMiddleware)
-        const { userId } = req.auth;
+        // Call req.auth() as a function (new Clerk API)
+        const auth = await req.auth();
+        console.log('Auth result:', auth);
+        
+        const { userId } = auth || {};
         console.log('User ID from auth:', userId);
         console.log('User ID type:', typeof userId);
         
@@ -349,7 +377,7 @@ export async function updateProfile(req, res) {
             console.log('ERROR: No userId found in req.auth');
             return res.status(401).json({ 
                 error: 'User not authenticated',
-                auth: req.auth,
+                auth: auth,
                 headers: req.headers
             });
         }
