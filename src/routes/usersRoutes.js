@@ -1,17 +1,8 @@
 import express from "express";
-import multer from "multer";
 
-import { getUsers, getUserById, createUser, deleteUser, updateUser, uploadProfileImage, updateProfile, checkUsernameAvailability, testAuth } from "../controllers/userControllers.js";
+import { getUsers, getUserById, createUser, deleteUser, updateUser, updateProfile, checkUsernameAvailability, testAuth } from "../controllers/userControllers.js";
 
 const router = express.Router();
-
-// Configure multer for file uploads
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-});
 
 // GET /api/users/: Fetch all users
 router.get("/", getUsers);
@@ -23,8 +14,6 @@ router.post("/", createUser);
 router.get("/test-auth", testAuth);
 // POST /api/users/check-username: Check username availability
 router.post("/check-username", checkUsernameAvailability);
-// POST /api/users/profile-image: Upload profile image
-router.post("/profile-image", upload.single('file'), uploadProfileImage);
 // PUT /api/users/profile: Update profile details
 router.put("/profile", updateProfile);
 

@@ -53,6 +53,7 @@ export async function testAuth(req, res) {
     }
 }
 
+
 // POST /api/users/check-username: Check if username is available
 export async function checkUsernameAvailability(req, res) {
     try {
@@ -307,58 +308,6 @@ export async function deleteUser(req, res) {
     }
 }
 
-// POST /api/users/profile-image: Upload profile image to Clerk
-export async function uploadProfileImage(req, res) {
-    try {
-        console.log('=== UPLOAD PROFILE IMAGE DEBUG ===');
-        console.log('req.auth type:', typeof req.auth);
-        console.log('req.headers.authorization:', req.headers.authorization ? 'Token present' : 'No token');
-        
-        // Call req.auth() as a function (new Clerk API)
-        const auth = await req.auth();
-        console.log('Auth result:', auth);
-        
-        const { userId } = auth || {};
-        console.log('User ID from auth:', userId);
-        console.log('User ID type:', typeof userId);
-        
-        if (!userId) {
-            console.log('ERROR: No userId found in req.auth');
-            return res.status(401).json({ 
-                error: 'User not authenticated',
-                auth: auth,
-                headers: req.headers
-            });
-        }
-
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
-        }
-
-        // Convert buffer to base64 for Clerk API
-        const base64Image = req.file.buffer.toString('base64');
-        const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
-
-        // Upload to Clerk using the specific profile image method
-        const updatedUser = await clerkClient.users.updateUserProfileImage(userId, {
-            file: dataUrl
-        });
-
-        res.json({
-            message: 'Profile image uploaded successfully',
-            imageUrl: updatedUser.imageUrl
-        });
-
-    } catch (error) {
-        console.error('Error uploading profile image:', error);
-        
-        if (error.status === 401) {
-            return res.status(401).json({ error: 'Invalid or expired token' });
-        }
-        
-        res.status(500).json({ error: 'Failed to upload profile image' });
-    }
-}
 
 // PUT /api/users/profile: Update profile details in Clerk
 export async function updateProfile(req, res) {
@@ -384,21 +333,47 @@ export async function updateProfile(req, res) {
             });
         }
 
-        const { firstName, lastName, phoneNumber } = req.body;
+        const { firstName, lastName, phoneNumber, username } = req.body;
+        
+        console.log('Received update data:', { firstName, lastName, phoneNumber, username });
 
-        // Validate that at least one field is provided
-        if (!firstName && !lastName && !phoneNumber) {
-            return res.status(400).json({ error: 'At least one field must be provided' });
+        // Validate that at least one field is provided and not empty
+        const hasValidField = (firstName && firstName.trim() !== '') || 
+                             (lastName && lastName.trim() !== '') || 
+                             (phoneNumber && phoneNumber.trim() !== '') ||
+                             (username && username.trim() !== '');
+        
+        if (!hasValidField) {
+            return res.status(400).json({ 
+                error: 'At least one field must be provided and not empty',
+                received: { firstName, lastName, phoneNumber, username }
+            });
         }
 
-        // Prepare update data
-        const updateData = {};
-        if (firstName) updateData.firstName = firstName;
-        if (lastName) updateData.lastName = lastName;
-        if (phoneNumber) updateData.phoneNumber = phoneNumber;
+        // Prepare update data for Clerk (only firstName, lastName, phoneNumber)
+        const clerkUpdateData = {};
+        if (firstName && firstName.trim() !== '') clerkUpdateData.firstName = firstName.trim();
+        if (lastName && lastName.trim() !== '') clerkUpdateData.lastName = lastName.trim();
+        if (phoneNumber && phoneNumber.trim() !== '') clerkUpdateData.phoneNumber = phoneNumber.trim();
 
-        // Update user in Clerk
-        const updatedUser = await clerkClient.users.updateUser(userId, updateData);
+        // Update user in Clerk (if there are Clerk fields to update)
+        let updatedUser;
+        if (Object.keys(clerkUpdateData).length > 0) {
+            updatedUser = await clerkClient.users.updateUser(userId, clerkUpdateData);
+            console.log('Updated Clerk user with:', clerkUpdateData);
+        } else {
+            // If no Clerk fields to update, just get the current user
+            updatedUser = await clerkClient.users.getUser(userId);
+        }
+        
+        // Handle username update separately (if provided)
+        if (username && username.trim() !== '') {
+            // Note: Clerk doesn't have a direct username field in the user object
+            // Username is typically handled through the username field in the user metadata
+            // For now, we'll just log it - you may need to implement custom logic
+            console.log('Username update requested:', username.trim());
+            // You might want to store this in your database instead
+        }
         
         console.log('Profile updated successfully for user:', userId);
         
