@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 
-import { getUsers, getUserById, createUser, deleteUser, updateUser, uploadProfileImage, updateProfile, checkUsernameAvailability } from "../controllers/userControllers.js";
+import { getUsers, getUserById, createUser, deleteUser, updateUser, uploadProfileImage, updateProfile, checkUsernameAvailability, testAuth } from "../controllers/userControllers.js";
 
 const router = express.Router();
 
@@ -19,6 +19,8 @@ router.get("/", getUsers);
 router.post("/", createUser);
 
 // SPECIFIC ROUTES (must come before parameterized routes)
+// GET /api/users/test-auth: Test authentication
+router.get("/test-auth", testAuth);
 // POST /api/users/check-username: Check username availability
 router.post("/check-username", checkUsernameAvailability);
 // POST /api/users/profile-image: Upload profile image
