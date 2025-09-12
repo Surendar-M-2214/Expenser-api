@@ -1,6 +1,29 @@
 import { sql } from "../config/db.js";
 import { clerkClient } from '@clerk/express';
 
+// POST /api/users/check-username: Check if username is available
+export async function checkUsernameAvailability(req, res) {
+    try {
+        const { username } = req.body;
+        
+        if (!username || username.trim() === '') {
+            return res.status(400).json({ error: 'Username is required' });
+        }
+
+        // Check if username exists in database
+        const existingUser = await sql`SELECT id FROM users WHERE username = ${username.trim()}`;
+        
+        if (existingUser.length > 0) {
+            res.json({ available: false, message: 'Username is already taken' });
+        } else {
+            res.json({ available: true, message: 'Username is available' });
+        }
+    } catch (error) {
+        console.error('Error checking username availability:', error);
+        res.status(500).json({ error: 'Failed to check username availability' });
+    }
+}
+
 // GET /api/users/: Fetch all users
 export async function getUsers(req, res) {
     try {
@@ -27,7 +50,7 @@ export async function getUserById(req, res) {
 // POST /api/users/: Create a new user
 export async function createUser(req, res) {
     try {
-        const {id, name, email, phone_number, firstName, lastName, username, profile_image } = req.body;
+        const {id, email, phone_number, firstName, lastName, username, profile_image } = req.body;
 
         // Validate required fields
         if (!id || !email) {
@@ -55,7 +78,8 @@ export async function createUser(req, res) {
             console.log('User exists in Clerk:', clerkUser.id);
             
             // Insert new user into the database
-            const user = await sql`INSERT INTO users (id, username, first_name, last_name, name, email, phone_number, profile_image) VALUES (${id}, ${username || ''}, ${firstName || ''}, ${lastName || ''}, ${name || firstName || ''}, ${email}, ${phone_number || ''}, ${profile_image || ''}) RETURNING *`;
+            // Use Clerk user ID as the id, no name field
+            const user = await sql`INSERT INTO users (id, username, first_name, last_name, email, phone_number, profile_image) VALUES (${id}, ${username || ''}, ${firstName || ''}, ${lastName || ''}, ${email}, ${phone_number || ''}, ${profile_image || ''}) RETURNING *`;
             
             res.json({
                 message: "User created successfully in database",
@@ -81,9 +105,9 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
     try {
         const { id } = req.params;
-        const { firstName, lastName, phoneNumber, name, email, phone_number, username, profile_image } = req.body;
+        const { firstName, lastName, phoneNumber, email, phone_number, username, profile_image } = req.body;
         
-        console.log('Update user request:', { id, firstName, lastName, phoneNumber, name, email, phone_number, username, profile_image });
+        console.log('Update user request:', { id, firstName, lastName, phoneNumber, email, phone_number, username, profile_image });
         
         // Check if user exists in database
         const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;
@@ -136,10 +160,10 @@ export async function updateUser(req, res) {
             }
         }
         
-        // Handle legacy format (name, email, phone_number)
-        if (name || email || phone_number) {
+        // Handle legacy format (email, phone_number)
+        if (email || phone_number) {
             // Validate that at least one field is provided and not empty
-            if ((!name || name.trim() === '') && (!email || email.trim() === '') && (!phone_number || phone_number.trim() === '')) {
+            if ((!email || email.trim() === '') && (!phone_number || phone_number.trim() === '')) {
                 return res.status(400).json({ error: "At least one field must be provided and not empty" });
             }
             
@@ -159,10 +183,6 @@ export async function updateUser(req, res) {
                 }
             }
             
-            if (name) {
-                dbUpdateFields.push('name');
-                dbUpdateValues.push(name);
-            }
             if (email) {
                 dbUpdateFields.push('email');
                 dbUpdateValues.push(email);
