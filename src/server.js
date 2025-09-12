@@ -1,6 +1,7 @@
 // Import required modules
 import express from "express";
 import dotenv from "dotenv";
+import { clerkMiddleware } from "@clerk/express";
 import { initDB } from "./config/db.js";
 import { ratelimiter } from "./middleware/ratelimiter.js";
 import usersRoute from "./routes/usersRoutes.js";
@@ -17,6 +18,13 @@ const app = express();
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// Configure Clerk middleware with environment variables
+app.use(clerkMiddleware({
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+  secretKey: process.env.CLERK_SECRET_KEY,
+}));
+
 app.use(ratelimiter);
 /**
  * Initialize the database and ensure required tables and indexes exist.

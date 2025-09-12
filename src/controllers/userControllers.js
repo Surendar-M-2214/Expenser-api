@@ -1,4 +1,6 @@
 import { sql } from "../config/db.js";
+import { clerkClient } from '@clerk/express';
+import { createClerkClient } from '@clerk/backend';
 
 // GET /api/users/: Fetch all users
 export async function getUsers(req, res) {
@@ -156,5 +158,93 @@ export async function deleteUser(req, res) {
     catch (error) {
         console.error("Error deleting user", error);
         res.status(500).json({ error: "Failed to delete user" });
+    }
+}
+
+// POST /api/users/profile-image: Upload profile image to Clerk
+export async function uploadProfileImage(req, res) {
+    try {
+        // Get user ID from req.auth (set by clerkMiddleware)
+        const { userId } = req.auth;
+        
+        if (!userId) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        // Convert buffer to base64 for Clerk API
+        const base64Image = req.file.buffer.toString('base64');
+        const dataUrl = `data:${req.file.mimetype};base64,${base64Image}`;
+
+        // Upload to Clerk using the specific profile image method
+        const updatedUser = await clerkClient.users.updateUserProfileImage(userId, {
+            file: dataUrl
+        });
+
+        res.json({
+            message: 'Profile image uploaded successfully',
+            imageUrl: updatedUser.imageUrl
+        });
+
+    } catch (error) {
+        console.error('Error uploading profile image:', error);
+        
+        if (error.status === 401) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        
+        res.status(500).json({ error: 'Failed to upload profile image' });
+    }
+}
+
+// PUT /api/users/profile: Update profile details in Clerk
+export async function updateProfile(req, res) {
+    try {
+        // Get user ID from req.auth (set by clerkMiddleware)
+        const { userId } = req.auth;
+        
+        if (!userId) {
+            return res.status(401).json({ error: 'User not authenticated' });
+        }
+
+        const { firstName, lastName, phoneNumber } = req.body;
+
+        // Validate that at least one field is provided
+        if (!firstName && !lastName && !phoneNumber) {
+            return res.status(400).json({ error: 'At least one field must be provided' });
+        }
+
+        // Prepare update data
+        const updateData = {};
+        if (firstName) updateData.firstName = firstName;
+        if (lastName) updateData.lastName = lastName;
+        if (phoneNumber) updateData.phoneNumber = phoneNumber;
+
+        // Update user in Clerk
+        const updatedUser = await clerkClient.users.updateUser(userId, updateData);
+
+        res.json({
+            message: 'Profile updated successfully',
+            user: {
+                id: updatedUser.id,
+                firstName: updatedUser.firstName,
+                lastName: updatedUser.lastName,
+                emailAddresses: updatedUser.emailAddresses,
+                phoneNumbers: updatedUser.phoneNumbers,
+                imageUrl: updatedUser.imageUrl
+            }
+        });
+
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        
+        if (error.status === 401) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        
+        res.status(500).json({ error: 'Failed to update profile' });
     }
 }
