@@ -156,13 +156,14 @@ export async function createUser(req, res) {
 // PUT /api/users/:id: Update a user by ID
 export async function updateUser(req, res) {
     try {
-        const { id } = req.params;
+        const auth = await req.auth()
+        const { userId } = auth ;
         const { firstName, lastName, phoneNumber, email, phone_number, username, profile_image } = req.body;
         
-        console.log('Update user request:', { id, firstName, lastName, phoneNumber, email, phone_number, username, profile_image });
+        console.log('Update user request:', { userId, firstName, lastName, phoneNumber, email, phone_number, username, profile_image });
         
         // Check if user exists in database
-        const userExists = await sql`SELECT * FROM users WHERE id = ${id}`;
+        const userExists = await sql`SELECT * FROM users WHERE id = ${userId}`;
         if (userExists.length === 0) {
             return res.status(404).json({ error: "User not found in database" });
         }
@@ -181,7 +182,7 @@ export async function updateUser(req, res) {
                 if (phoneNumber) clerkUpdateData.phoneNumber = phoneNumber;
                 
                 try {
-                    const updatedClerkUser = await clerkClient.users.updateUser(id, clerkUpdateData);
+                    const updatedClerkUser = await clerkClient.users.updateUser(userId, clerkUpdateData);
                     console.log('Clerk user updated successfully:', updatedClerkUser.id);
                 } catch (clerkError) {
                     console.error('Error updating user in Clerk:', clerkError);
@@ -248,7 +249,7 @@ export async function updateUser(req, res) {
         // Update database if there are fields to update
         if (dbUpdateFields.length > 0) {
             const setClause = dbUpdateFields.map((field, index) => `${field} = $${index + 1}`).join(', ');
-            const updateQuery = sql.unsafe(`UPDATE users SET ${setClause} WHERE id = $${dbUpdateFields.length + 1} RETURNING *`, [...dbUpdateValues, id]);
+            const updateQuery = sql.unsafe(`UPDATE users SET ${setClause} WHERE id = $${dbUpdateFields.length + 1} RETURNING *`, [...dbUpdateValues, userId]);
             
             const result = await updateQuery;
             
@@ -272,25 +273,26 @@ export async function updateUser(req, res) {
 // DELETE /api/users/:id: Delete a user by ID
 export async function deleteUser(req, res) {
     try {
-        const { id } = req.params;
+        const auth = await req.auth()
+        const { userId } = auth ;
         
         // First check if user exists
-        const userExists = await sql`SELECT id FROM users WHERE id = ${id}`;
+        const userExists = await sql`SELECT id FROM users WHERE id = ${userId}`;
         if (userExists.length === 0) {
             return res.status(404).json({ error: "User not found" });
         }
         
         // Get count of transactions before deletion
-        const transactionCount = await sql`SELECT COUNT(*) as count FROM user_transactions WHERE user_id = ${id}`;
+        const transactionCount = await sql`SELECT COUNT(*) as count FROM user_transactions WHERE user_id = ${userId}`;
         
         // Explicitly delete all transactions first (since CASCADE isn't working properly)
-        await sql`DELETE FROM user_transactions WHERE user_id = ${id}`;
+        await sql`DELETE FROM user_transactions WHERE user_id = ${userId}`;
         
         // Then delete the user
-        const result = await sql`DELETE FROM users WHERE id = ${id} RETURNING *`;
+        const result = await sql`DELETE FROM users WHERE id = ${userId} RETURNING *`;
         
         // Verify that all transactions were deleted
-        const remainingTransactions = await sql`SELECT COUNT(*) as count FROM user_transactions WHERE user_id = ${id}`;
+        const remainingTransactions = await sql`SELECT COUNT(*) as count FROM user_transactions WHERE user_id = ${userId}`;
         
         res.json({
             message: "User and all associated transactions deleted successfully",
