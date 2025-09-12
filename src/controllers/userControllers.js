@@ -257,8 +257,8 @@ export async function deleteUser(req, res) {
 export async function uploadProfileImage(req, res) {
     try {
         // Get user ID from req.auth (set by clerkMiddleware)
-        const userId ="user_32NtFiw6GNxksJZKIwCea8KeYQW";
-        
+       const userId = req.params.id;
+        console.log('User ID from params:', userId);
         if (!userId) {
             return res.status(401).json({ error: 'User not authenticated' });
         }
@@ -296,10 +296,10 @@ export async function uploadProfileImage(req, res) {
 export async function updateProfile(req, res) {
     try {
         // Get user ID from req.auth (set by clerkMiddleware)
-        const { userId } = req.auth;
+            const userId = req.params.id;
+            console.log('User ID from params:', userId);
         
-        console.log('Auth object:', req.auth);
-        console.log('User ID from auth:', userId);
+        console.log('User ID from params:', userId);
         
         if (!userId) {
             return res.status(401).json({ error: 'User not authenticated' });
