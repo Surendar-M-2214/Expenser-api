@@ -1,6 +1,6 @@
 import express from "express";
 
-import { getUsers, getUserById, createUser, deleteUser, updateUser, updateProfile, checkUsernameAvailability, testAuth } from "../controllers/userControllers.js";
+import { getUsers, getUserById, createUser, deleteUser, updateUser, updateProfile, getUserProfile, checkUsernameAvailability, testAuth, uploadProfileImage } from "../controllers/userControllers.js";
 
 const router = express.Router();
 
@@ -12,10 +12,14 @@ router.post("/", createUser);
 // SPECIFIC ROUTES (must come before parameterized routes)
 // GET /api/users/test-auth: Test authentication
 router.get("/test-auth", testAuth);
+// GET /api/users/profile: Get user profile from database
+router.get("/profile", getUserProfile);
 // POST /api/users/check-username: Check username availability
 router.post("/check-username", checkUsernameAvailability);
 // PUT /api/users/profile: Update profile details
 router.put("/profile", updateProfile);
+// POST /api/users/profile-image: Upload profile image
+router.post("/profile-image", uploadProfileImage);
 
 // PARAMETERIZED ROUTES (must come after specific routes)
 // GET /api/users/:id: Fetch a single user by ID
