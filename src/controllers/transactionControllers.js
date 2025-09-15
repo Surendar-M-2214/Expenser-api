@@ -1,4 +1,17 @@
 import { sql } from "../config/db.js";
+import multer from 'multer';
+
+// Configure multer to store files in memory
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+
+// Helper to convert buffer to data URL
+function bufferToDataUrl(mimeType, buffer) {
+    const base64 = buffer.toString('base64');
+    return `data:${mimeType};base64,${base64}`;
+}
 
 // GET /api/users/:id/transactions: Fetch all transactions for a user
 export async function getTransactions(req, res) {
@@ -108,48 +121,67 @@ export async function getTransactionById(req, res) {
     }
 }
 
-// POST /api/users/:id/transactions: Create a new transaction for a user
-export async function createTransaction(req, res) {
-    try {
-        const userId = req.userId;
-        console.log(req.body);
-        console.log(req.params);
-        const { amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date } = req.body;
+// POST /api/users/:id/transactions: Create a new transaction for a user with optional receipt upload
+export const createTransaction = [
+    upload.single('receipt'),
+    async function handleCreateTransaction(req, res) {
+        try {
+            const userId = req.userId;
+            console.log('Transaction data:', req.body);
+            console.log('File uploaded:', req.file ? 'Yes' : 'No');
+            
+            const { amount, currency, type, category, tags, description, reference, transaction_date } = req.body;
 
-        // Validate required fields: amount must be a positive number
-        if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-            return res.status(400).json({ error: "Amount is required and must be a positive number" });
+            // Validate required fields: amount must be a positive number
+            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+                return res.status(400).json({ error: "Amount is required and must be a positive number" });
+            }
+
+            // Validate transaction type
+            if (!type || !['debit', 'credit'].includes(type)) {
+                return res.status(400).json({ error: "Type is required and must be either 'debit' or 'credit'" });
+            }
+
+            // Check if user exists
+            const userExists = await sql`SELECT id FROM users WHERE id = ${userId}`;
+            if (userExists.length === 0) {
+                return res.status(404).json({ error: "User not found" });
+            }
+
+            // Handle receipt upload if file is provided
+            let receiptUrl = null;
+            let receiptFilename = null;
+            
+            if (req.file) {
+                const mimeType = req.file.mimetype || 'image/jpeg';
+                receiptUrl = bufferToDataUrl(mimeType, req.file.buffer);
+                receiptFilename = req.file.originalname || `receipt_${Date.now()}.jpg`;
+            }
+
+            // Set default values for optional fields
+            const currencyValue = currency || 'INR';
+            const tagsValue = tags || [];
+
+            // Insert new transaction into the database
+            const transaction = await sql`
+                INSERT INTO user_transactions (
+                    user_id, amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date
+                ) VALUES (
+                    ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receiptUrl}, ${receiptFilename}, ${transaction_date || 'CURRENT_DATE'}
+                ) RETURNING *
+            `;
+            
+            res.json({
+                message: "Transaction created successfully",
+                transaction: transaction[0],
+                receiptUploaded: !!req.file
+            });
+        } catch (error) {
+            console.error("Error creating transaction", error); 
+            res.status(500).json({ error: "Failed to create transaction" });
         }
-
-        // Validate transaction type
-        if (!type || !['debit', 'credit'].includes(type)) {
-            return res.status(400).json({ error: "Type is required and must be either 'debit' or 'credit'" });
-        }
-
-        // Check if user exists
-        const userExists = await sql`SELECT id FROM users WHERE id = ${userId}`;
-        if (userExists.length === 0) {
-            return res.status(404).json({ error: "User not found" });
-        }
-
-        // Set default values for optional fields
-        const currencyValue = currency || 'INR';
-        const tagsValue = tags || [];
-
-        // Insert new transaction into the database
-        const transaction = await sql`
-            INSERT INTO user_transactions (
-                user_id, amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date
-            ) VALUES (
-                ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receipt_url}, ${receipt_filename}, ${transaction_date || 'CURRENT_DATE'}
-            ) RETURNING *
-        `;
-        res.json(transaction);
-    } catch (error) {
-        console.error("Error creating transaction", error); 
-        res.status(500).json({ error: "Failed to create transaction" });
     }
-}
+];
 
 
 // DELETE /api/users/:id/transactions/:transaction_id: Delete a single transaction by ID
