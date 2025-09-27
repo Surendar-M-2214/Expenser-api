@@ -7,6 +7,9 @@ import { ratelimiter } from "./middleware/ratelimiter.js";
 import usersRoute from "./routes/usersRoutes.js";
 import transactionRoute from "./routes/transactionRoutes.js";
 import financialRoute from "./routes/financialRoutes.js";
+import aiRoute from "./routes/aiRoutes.js";
+import fileUploadRoute from "./routes/fileUploadRoutes.js";
+import { gemini } from "./config/gemini.js";
 // Load environment variables from .env file
 dotenv.config();
 
@@ -55,6 +58,8 @@ app.use("/api/users/:id/finance", (req, res, next) => {
   req.userId = req.params.id;
   next();
 }, financialRoute);
+app.use("/api/ai", aiRoute);
+app.use("/api/upload", fileUploadRoute);
 // Get financial summary by day, week, month, year using transaction_date
 
 
@@ -65,6 +70,7 @@ initDB()
         app.listen(port, () => {
             console.log(`Server is running on port ${port}`);
             console.log("Database initialized successfully");
+         
         });
     })
     .catch((e) => console.error("Failed to initialize database", e));
