@@ -1,5 +1,6 @@
 // Import required modules
 import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
 import { clerkMiddleware } from "@clerk/express";
 import { initDB } from "./config/db.js";
@@ -21,6 +22,14 @@ const app = express();
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// CORS configuration
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:19006', 'exp://192.168.1.100:8081'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-clerk-auth-token']
+}));
 
 // Configure Clerk middleware with environment variables
 console.log('=== CLERK CONFIG DEBUG ===');
