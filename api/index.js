@@ -7,6 +7,8 @@ import { ratelimiter } from "../src/middleware/ratelimiter.js";
 import usersRoute from "../src/routes/usersRoutes.js";
 import transactionRoute from "../src/routes/transactionRoutes.js";
 import financialRoute from "../src/routes/financialRoutes.js";
+import aiRoute from "../src/routes/aiRoutes.js";
+import fileUploadRoute from "../src/routes/fileUploadRoutes.js";
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +49,8 @@ app.use("/api/users/:id/finance", (req, res, next) => {
   req.userId = req.params.id;
   next();
 }, financialRoute);
+app.use("/api/ai", aiRoute);
+app.use("/api/upload", fileUploadRoute);
 
 // Initialize the database
 let dbInitialized = false;
