@@ -167,7 +167,7 @@ export const createTransaction = [
                 INSERT INTO user_transactions (
                     user_id, amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date
                 ) VALUES (
-                    ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receiptUrl}, ${receiptFilename}, ${transaction_date || 'CURRENT_DATE'}
+                    ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receiptUrl}, ${receiptFilename}, ${transaction_date || new Date().toISOString().split('T')[0]}
                 ) RETURNING *
             `;
             
