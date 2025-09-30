@@ -46,6 +46,16 @@ app.get("/", async (req, res) => {
     res.send("<h1 style='color:blue;text-align:center;font-size:30px;'>Welcome to the Transactions API</h1>");
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+    res.json({
+        success: true,
+        message: "API is running",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0"
+    });
+});
+
 // API routes
 app.use("/api/users", usersRoute);
 app.use("/api/users/:id/transactions", (req, res, next) => {
@@ -80,6 +90,29 @@ const initializeDatabase = async () => {
 app.use(async (req, res, next) => {
   await initializeDatabase();
   next();
+});
+
+// Global error handler to ensure JSON responses
+app.use((error, req, res, next) => {
+    console.error('Global error handler:', error);
+    
+    // Ensure we always return JSON, never HTML
+    if (!res.headersSent) {
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            details: error.message || 'An unexpected error occurred'
+        });
+    }
+});
+
+// 404 handler for unmatched routes
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        details: `The requested route ${req.originalUrl} was not found on this server`
+    });
 });
 
 // Export the app for Vercel

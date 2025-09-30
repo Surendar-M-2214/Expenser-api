@@ -17,11 +17,52 @@ function bufferToDataUrl(mimeType, buffer) {
 export async function getTransactions(req, res) {
     try {
         const userId = req.userId;
-        const transactions = await sql`SELECT * FROM user_transactions WHERE user_id = ${userId}`;
-        res.json(transactions);
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'User ID is required',
+                details: 'No user ID provided in request'
+            });
+        }
+        
+        console.log('Fetching transactions for user:', userId);
+        
+        const transactions = await sql`
+            SELECT 
+                id,
+                user_id,
+                amount,
+                currency,
+                type,
+                status,
+                category,
+                tags,
+                merchant,
+                reference,
+                description,
+                transaction_date,
+                created_at,
+                updated_at
+            FROM user_transactions 
+            WHERE user_id = ${userId}
+            ORDER BY transaction_date DESC, created_at DESC
+        `;
+        
+        console.log(`Found ${transactions.length} transactions for user ${userId}`);
+        
+        res.json({
+            success: true,
+            data: transactions,
+            count: transactions.length
+        });
     } catch (error) {
         console.error("Error fetching transactions", error);
-        res.status(500).json({ error: "Failed to fetch transactions" });
+        res.status(500).json({ 
+            success: false,
+            error: "Failed to fetch transactions",
+            details: error.message || 'Database error occurred'
+        });
     }
 }
 
@@ -29,6 +70,16 @@ export async function getTransactions(req, res) {
 export async function getTransactionSummary(req, res) {
     try {
         const userId = req.userId;
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'User ID is required',
+                details: 'No user ID provided in request'
+            });
+        }
+        
+        console.log('Fetching transaction summary for user:', userId);
 
         // Get basic summary (total count and amount)
         const basicSummary = await sql`
@@ -101,10 +152,17 @@ export async function getTransactionSummary(req, res) {
             by_category: categoryBreakdown
         };
 
-        res.json(result);
+        res.json({
+            success: true,
+            data: result
+        });
     } catch (error) {
         console.error("Error fetching transactions summary", error);
-        res.status(500).json({ error: "Failed to fetch transactions summary" });
+        res.status(500).json({ 
+            success: false,
+            error: "Failed to fetch transactions summary",
+            details: error.message || 'Database error occurred'
+        });
     }
 }
 
