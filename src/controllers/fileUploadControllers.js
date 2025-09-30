@@ -96,23 +96,40 @@ async function processFileWithAI(fileContent, fileType, fileName) {
         "transactions": [
           {
             "date": "YYYY-MM-DD",
-            "description": "Transaction description",
+            "description": "Simple, informal transaction title",
             "amount": 123.45,
             "type": "debit" or "credit",
             "category": "Category name",
-            "reference": "Reference number if available"
+            "reference": "Transaction ID or reference number"
           }
         ]
       }
       
-      Rules:
+      Rules for Excel/CSV processing:
       - Convert all dates to YYYY-MM-DD format
       - Ensure amounts are positive numbers
       - Determine type based on context (debit for expenses, credit for income)
-      - Categorize transactions appropriately (Food, Transport, Entertainment, etc.)
+      - Categorize transactions appropriately (Food & Drinks, Shopping, Transportation, Entertainment, Bills, Income, Other)
+      
+      For transaction descriptions:
+      - Make them informal and easy to understand
+      - Use simple, everyday language
+      - Examples: "Coffee at Starbucks", "Uber ride", "Grocery shopping", "Salary payment", "Electricity bill"
+      - Avoid technical jargon or complex terms
+      - Keep descriptions concise but descriptive
+      
+      For reference field:
+      - Store any transaction ID, reference number, or unique identifier from the data
+      - If no ID is available, use a meaningful identifier like "TXN-001", "REF-123", etc.
+      - This helps track the original transaction in the source system
+      
+      Amount handling:
       - If amount is negative, make it positive and set type to "debit"
       - If amount is positive and appears to be income, set type to "credit"
-      - Return only valid JSON, no additional text`;
+      - For expenses, use "debit" type
+      - For income/salary/refunds, use "credit" type
+      
+      Return only valid JSON, no additional text`;
     } else if (fileType === 'pdf') {
       prompt = `You are a financial data processor. Analyze the following PDF text content and extract transaction information.
       
@@ -124,21 +141,40 @@ async function processFileWithAI(fileContent, fileType, fileName) {
         "transactions": [
           {
             "date": "YYYY-MM-DD",
-            "description": "Transaction description",
+            "description": "Simple, informal transaction title",
             "amount": 123.45,
             "type": "debit" or "credit",
             "category": "Category name",
-            "reference": "Reference number if available"
+            "reference": "Transaction ID or reference number"
           }
         ]
       }
       
-      Rules:
+      Rules for PDF processing:
       - Convert all dates to YYYY-MM-DD format
       - Ensure amounts are positive numbers
       - Determine type based on context (debit for expenses, credit for income)
-      - Categorize transactions appropriately
-      - Return only valid JSON, no additional text`;
+      - Categorize transactions appropriately (Food & Drinks, Shopping, Transportation, Entertainment, Bills, Income, Other)
+      
+      For transaction descriptions:
+      - Make them informal and easy to understand
+      - Use simple, everyday language
+      - Examples: "Coffee at Starbucks", "Uber ride", "Grocery shopping", "Salary payment", "Electricity bill"
+      - Avoid technical jargon or complex terms
+      - Keep descriptions concise but descriptive
+      
+      For reference field:
+      - Store any transaction ID, reference number, or unique identifier from the content
+      - If no ID is available, use a meaningful identifier like "TXN-001", "REF-123", etc.
+      - This helps track the original transaction in the source system
+      
+      Amount handling:
+      - If amount is negative, make it positive and set type to "debit"
+      - If amount is positive and appears to be income, set type to "credit"
+      - For expenses, use "debit" type
+      - For income/salary/refunds, use "credit" type
+      
+      Return only valid JSON, no additional text`;
     }
     
     const aiResponse = await gemini(prompt);

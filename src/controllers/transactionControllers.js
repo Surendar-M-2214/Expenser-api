@@ -256,13 +256,56 @@ export async function bulkDeleteTransactions(req, res) {
 // PUT /api/users/:id/transactions/:transaction_id: Update a single transaction by ID
 export async function updateTransaction(req, res) {
     try {
-        const {  transaction_id } = req.params;
-        const { amount, currency, type, status, category, tags, merchant, reference } = req.body;
-        const transaction = await sql`UPDATE user_transactions SET amount = ${amount}, currency = ${currency}, type = ${type}, status = ${status}, category = ${category}, tags = ${tags}, merchant = ${merchant}, reference = ${reference}, transaction_date = ${req.body.transaction_date || 'CURRENT_DATE'} WHERE id = ${transaction_id}`;
-        res.json(transaction);
+        const { transaction_id } = req.params;
+        const { amount, currency, type, status, category, tags, merchant, reference, description, transaction_date } = req.body;
+        
+        // Update the transaction
+        await sql`
+            UPDATE user_transactions 
+            SET 
+                amount = ${amount}, 
+                currency = ${currency || 'INR'}, 
+                type = ${type}, 
+                status = ${status || 'completed'}, 
+                category = ${category}, 
+                tags = ${tags || []}, 
+                merchant = ${merchant || ''}, 
+                reference = ${reference || ''}, 
+                description = ${description || ''},
+                transaction_date = ${transaction_date || new Date().toISOString().split('T')[0]}
+            WHERE id = ${transaction_id}
+        `;
+        
+        // Fetch and return the updated transaction
+        const updatedTransaction = await sql`
+            SELECT 
+                id, 
+                amount, 
+                currency, 
+                type, 
+                status, 
+                category, 
+                tags, 
+                merchant, 
+                reference, 
+                description,
+                transaction_date,
+                created_at,
+                updated_at
+            FROM user_transactions 
+            WHERE id = ${transaction_id}
+        `;
+        
+        res.json({
+            success: true,
+            data: updatedTransaction[0]
+        });
     }
     catch (error) {
         console.error("Error updating transaction", error);
-        res.status(500).json({ error: "Failed to update transaction" });
+        res.status(500).json({ 
+            success: false,
+            error: "Failed to update transaction" 
+        });
     }
 }

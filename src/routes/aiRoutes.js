@@ -4,10 +4,10 @@ import { sql } from "../config/db.js";
 
 const router = express.Router();
 
-// AI chat endpoint with transaction data
+// AI chat endpoint with transaction data and conversation history
 router.post("/chat", async (req, res) => {
   try {
-    const { message, userId } = req.body;
+    const { message, userId, conversationHistory = [] } = req.body;
 
     // Validate input
     if (!message || !message.trim()) {
@@ -97,10 +97,17 @@ router.post("/chat", async (req, res) => {
       // Continue without transaction data
     }
 
+    // Create conversation context
+    const conversationContext = conversationHistory.length > 0 ? `
+    Previous Conversation:
+    ${conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+    
+    ` : '';
+
     // Create a comprehensive financial context prompt
     const financialContext = `You are a helpful AI financial assistant. You can have normal conversations and answer any questions, not just financial ones.
 
-    User's Question: "${message}"
+    ${conversationContext}Current User Question: "${message}"
 
     ${Object.keys(transactionData).length > 0 ? `
     User's Transaction Data (last 3 months) - Only use this data if the user specifically asks about their spending, transactions, or financial analysis:
