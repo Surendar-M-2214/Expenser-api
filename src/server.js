@@ -10,7 +10,6 @@ import transactionRoute from "./routes/transactionRoutes.js";
 import financialRoute from "./routes/financialRoutes.js";
 import aiRoute from "./routes/aiRoutes.js";
 import fileUploadRoute from "./routes/fileUploadRoutes.js";
-import { gemini } from "./config/gemini.js";
 // Load environment variables from .env file
 dotenv.config();
 
@@ -69,6 +68,30 @@ app.use("/api/users/:id/finance", (req, res, next) => {
 }, financialRoute);
 app.use("/api/ai", aiRoute);
 app.use("/api/upload", fileUploadRoute);
+
+// 404 handler for unmatched routes
+app.use('*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        details: `The requested route ${req.originalUrl} was not found on this server`
+    });
+});
+
+// Global error handler to ensure JSON responses
+app.use((error, req, res, next) => {
+    console.error('Global error handler:', error);
+    
+    // Ensure we always return JSON, never HTML
+    if (!res.headersSent) {
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            details: error.message || 'An unexpected error occurred'
+        });
+    }
+});
+
 // Get financial summary by day, week, month, year using transaction_date
 
 

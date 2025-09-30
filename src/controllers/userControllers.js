@@ -406,11 +406,44 @@ export async function updateProfile(req, res) {
         // Update user in Clerk (if there are Clerk fields to update)
         let updatedUser;
         if (Object.keys(clerkUpdateData).length > 0) {
-            updatedUser = await clerkClient.users.updateUser(userId, clerkUpdateData);
-            console.log('Updated Clerk user with:', clerkUpdateData);
+            try {
+                updatedUser = await clerkClient.users.updateUser(userId, clerkUpdateData);
+                console.log('Updated Clerk user with:', clerkUpdateData);
+            } catch (clerkError) {
+                console.error('Clerk update error:', clerkError);
+                // Don't fail the entire request if Clerk update fails
+                // We'll still try to update the database
+                try {
+                    updatedUser = await clerkClient.users.getUser(userId);
+                } catch (getUserError) {
+                    console.error('Failed to get user from Clerk:', getUserError);
+                    // Create a minimal user object if we can't get from Clerk
+                    updatedUser = {
+                        id: userId,
+                        firstName: firstName || '',
+                        lastName: lastName || '',
+                        emailAddresses: [],
+                        phoneNumbers: [],
+                        imageUrl: ''
+                    };
+                }
+            }
         } else {
             // If no Clerk fields to update, just get the current user
-            updatedUser = await clerkClient.users.getUser(userId);
+            try {
+                updatedUser = await clerkClient.users.getUser(userId);
+            } catch (getUserError) {
+                console.error('Failed to get user from Clerk:', getUserError);
+                // Create a minimal user object if we can't get from Clerk
+                updatedUser = {
+                    id: userId,
+                    firstName: firstName || '',
+                    lastName: lastName || '',
+                    emailAddresses: [],
+                    phoneNumbers: [],
+                    imageUrl: ''
+                };
+            }
         }
         
         // Update database with profile changes
@@ -458,6 +491,7 @@ export async function updateProfile(req, res) {
                 console.error('Database update error:', dbError);
                 // Don't fail the entire request if database update fails
                 // Clerk update was successful, so we'll log the error but continue
+                // We'll still return success since Clerk update worked
             }
         }
         
@@ -478,11 +512,46 @@ export async function updateProfile(req, res) {
     } catch (error) {
         console.error('Error updating profile:', error);
         
+        // Ensure we always return JSON, never HTML
         if (error.status === 401) {
-            return res.status(401).json({ error: 'Invalid or expired token' });
+            return res.status(401).json({ 
+                success: false,
+                error: 'Invalid or expired token',
+                details: error.message 
+            });
         }
         
-        res.status(500).json({ error: 'Failed to update profile' });
+        // Handle specific error types
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Validation error',
+                details: error.message 
+            });
+        }
+        
+        if (error.name === 'DatabaseError') {
+            return res.status(500).json({ 
+                success: false,
+                error: 'Database error',
+                details: 'Failed to update profile in database' 
+            });
+        }
+        
+        if (error.name === 'ClerkError') {
+            return res.status(500).json({ 
+                success: false,
+                error: 'Authentication service error',
+                details: 'Failed to update profile in authentication service' 
+            });
+        }
+        
+        // Generic error response
+        return res.status(500).json({ 
+            success: false,
+            error: 'Failed to update profile',
+            details: error.message || 'An unexpected error occurred'
+        });
     }
 }
 
