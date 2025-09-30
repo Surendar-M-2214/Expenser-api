@@ -86,95 +86,84 @@ async function processFileWithAI(fileContent, fileType, fileName) {
     let prompt = '';
     
     if (fileType === 'csv' || fileType === 'excel') {
-      prompt = `You are a financial data processor. Analyze the following ${fileType.toUpperCase()} data and extract transaction information. 
-      
-      File: ${fileName}
-      Data: ${JSON.stringify(fileContent, null, 2)}
-      
-      Please extract transaction data and return it in the following JSON format:
-      {
-        "transactions": [
-          {
-            "date": "YYYY-MM-DD",
-            "description": "Simple, informal transaction title",
-            "amount": 123.45,
-            "type": "debit" or "credit",
-            "category": "Category name",
-            "reference": "Transaction ID or reference number"
-          }
-        ]
-      }
-      
-      Rules for Excel/CSV processing:
-      - Convert all dates to YYYY-MM-DD format
-      - Ensure amounts are positive numbers
-      - Determine type based on context (debit for expenses, credit for income)
-      - Categorize transactions appropriately (Food & Drinks, Shopping, Transportation, Entertainment, Bills, Income, Other)
-      
-      For transaction descriptions:
-      - Make them informal and easy to understand
-      - Use simple, everyday language
-      - Examples: "Coffee at Starbucks", "Uber ride", "Grocery shopping", "Salary payment", "Electricity bill"
-      - Avoid technical jargon or complex terms
-      - Keep descriptions concise but descriptive
-      
-      For reference field:
-      - Store any transaction ID, reference number, or unique identifier from the data
-      - If no ID is available, use a meaningful identifier like "TXN-001", "REF-123", etc.
-      - This helps track the original transaction in the source system
-      
-      Amount handling:
-      - If amount is negative, make it positive and set type to "debit"
-      - If amount is positive and appears to be income, set type to "credit"
-      - For expenses, use "debit" type
-      - For income/salary/refunds, use "credit" type
-      
-      Return only valid JSON, no additional text`;
+      prompt = `You are a financial data processor. Analyze the following ${fileType.toUpperCase()} data and extract transactions. 
+
+File: ${fileName}
+Data: ${JSON.stringify(fileContent, null, 2)}
+
+Please extract transaction data and return it in the following JSON format:
+{
+  "transactions": [
+    {
+      "title": "User-friendly, short, simple transaction title",
+      "description": "Exact transaction description from the file",
+      "reference": "Transaction ID or reference number",
+      "date": "YYYY-MM-DD",
+      "type": "debit" or "credit",
+      "amount": 123.45,
+      "category": "AI-generated category (Food & Drinks, Shopping, Transportation, Entertainment, Bills, UPI, Banking, Investment, Healthcare, Education, Travel, Subscription, Income, Other)"
+    }
+  ]
+}
+
+Rules for processing:
+1. Title:
+   - Generate a short, informal, easy-to-understand title based on the transaction description.
+   - Examples: "Coffee at Starbucks", "Uber ride", "Grocery shopping", "Salary payment".
+   - Avoid technical jargon or codes.
+2. Description:
+   - Use the exact description from the file.
+3. Reference:
+   - Extract any transaction ID, reference number, or unique identifier.
+   - If not present, generate a meaningful identifier like "TXN-001".
+4. Date:
+   - Convert all dates to YYYY-MM-DD format.
+5. Type & Amount:
+   - If the amount is negative, make it positive and type = "debit".
+   - If the amount is positive and appears to be income, type = "credit".
+6. Category:
+   - Generate an appropriate category for the transaction.
+   - Use categories: Food & Drinks, Shopping, Transportation, Entertainment, Bills, UPI, Banking, Investment, Healthcare, Education, Travel, Subscription, Income, Other.
+7. Return only valid JSON, no explanations, no extra text.`;
+
     } else if (fileType === 'pdf') {
-      prompt = `You are a financial data processor. Analyze the following PDF text content and extract transaction information.
-      
-      File: ${fileName}
-      Content: ${fileContent}
-      
-      Please extract transaction data and return it in the following JSON format:
-      {
-        "transactions": [
-          {
-            "date": "YYYY-MM-DD",
-            "description": "Simple, informal transaction title",
-            "amount": 123.45,
-            "type": "debit" or "credit",
-            "category": "Category name",
-            "reference": "Transaction ID or reference number"
-          }
-        ]
-      }
-      
-      Rules for PDF processing:
-      - Convert all dates to YYYY-MM-DD format
-      - Ensure amounts are positive numbers
-      - Determine type based on context (debit for expenses, credit for income)
-      - Categorize transactions appropriately (Food & Drinks, Shopping, Transportation, Entertainment, Bills, Income, Other)
-      
-      For transaction descriptions:
-      - Make them informal and easy to understand
-      - Use simple, everyday language
-      - Examples: "Coffee at Starbucks", "Uber ride", "Grocery shopping", "Salary payment", "Electricity bill"
-      - Avoid technical jargon or complex terms
-      - Keep descriptions concise but descriptive
-      
-      For reference field:
-      - Store any transaction ID, reference number, or unique identifier from the content
-      - If no ID is available, use a meaningful identifier like "TXN-001", "REF-123", etc.
-      - This helps track the original transaction in the source system
-      
-      Amount handling:
-      - If amount is negative, make it positive and set type to "debit"
-      - If amount is positive and appears to be income, set type to "credit"
-      - For expenses, use "debit" type
-      - For income/salary/refunds, use "credit" type
-      
-      Return only valid JSON, no additional text`;
+      prompt = `You are a financial data processor. Analyze the following PDF text content and extract transactions.
+
+File: ${fileName}
+Content: ${fileContent}
+
+Please extract transaction data and return it in the following JSON format:
+{
+  "transactions": [
+    {
+      "title": "User-friendly, short, simple transaction title",
+      "description": "Exact transaction description from the PDF",
+      "reference": "Transaction ID or reference number",
+      "date": "YYYY-MM-DD",
+      "type": "debit" or "credit",
+      "amount": 123.45,
+      "category": "AI-generated category (Food & Drinks, Shopping, Transportation, Entertainment, Bills, UPI, Banking, Investment, Healthcare, Education, Travel, Subscription, Income, Other)"
+    }
+  ]
+}
+
+Rules for processing:
+1. Title:
+   - Generate a short, informal, easy-to-understand title based on the transaction description.
+2. Description:
+   - Use the exact description from the PDF content.
+3. Reference:
+   - Extract any transaction ID, reference number, or unique identifier.
+   - If not present, generate a meaningful identifier like "TXN-001".
+4. Date:
+   - Convert all dates to YYYY-MM-DD format.
+5. Type & Amount:
+   - If the amount is negative, make it positive and type = "debit".
+   - If the amount is positive and appears to be income, type = "credit".
+6. Category:
+   - Generate an appropriate category for the transaction.
+   - Use categories: Food & Drinks, Shopping, Transportation, Entertainment, Bills, UPI, Banking, Investment, Healthcare, Education, Travel, Subscription, Income, Other.
+7. Return only valid JSON, no explanations, no extra text.`;
     }
     
     const aiResponse = await gemini(prompt);
@@ -327,7 +316,7 @@ export const bulkUploadTransactions = async (req, res) => {
       currency: 'INR',
       type: transaction.type,
       category: transaction.category,
-      description: transaction.description,
+      description: transaction.title || transaction.description, // Use title as description for display
       reference: transaction.reference || null,
       transaction_date: transaction.date,
       tags: [],
