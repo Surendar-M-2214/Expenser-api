@@ -1,60 +1,17 @@
 import { sql } from "../config/db.js";
 import { clerkClient } from '@clerk/express';
 import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Get current directory for file storage
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../../uploads/profile-images');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Configure multer to store files on disk
+// Use memory storage everywhere - simpler and works in all environments
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => {
-            cb(null, uploadsDir);
-        },
-        filename: (req, file, cb) => {
-            // Generate unique filename with timestamp
-            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-            const ext = path.extname(file.originalname);
-            cb(null, `profile-${uniqueSuffix}${ext}`);
-        }
-    }),
+    storage: multer.memoryStorage(), // Always use memory storage
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Helper to generate file URL
-function generateFileUrl(filename) {
-    return `/uploads/profile-images/${filename}`;
-}
-
-// Helper to delete old profile image file
-async function deleteOldProfileImage(userId) {
-    try {
-        const result = await sql`SELECT profile_image FROM users WHERE id = ${userId}`;
-        if (result.length > 0 && result[0].profile_image) {
-            const oldImagePath = result[0].profile_image;
-            // Only delete if it's a file path, not a data URL
-            if (!oldImagePath.startsWith('data:')) {
-                const fullPath = path.join(__dirname, '../../', oldImagePath);
-                if (fs.existsSync(fullPath)) {
-                    fs.unlinkSync(fullPath);
-                    console.log('Deleted old profile image:', fullPath);
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error deleting old profile image:', error);
-        // Don't throw error, just log it
-    }
+// Helper to convert buffer to data URL
+function bufferToDataUrl(mimeType, buffer) {
+    const base64 = buffer.toString('base64');
+    return `data:${mimeType};base64,${base64}`;
 }
 
 // POST /api/users/profile-image: Upload profile image and store as data URL in DB
@@ -92,19 +49,17 @@ export const uploadProfileImage = [
                 });
             }
 
-            // Delete old profile image file
-            await deleteOldProfileImage(userId);
+            // Convert image to base64 data URL (works everywhere)
+            const mimeType = req.file.mimetype;
+            const imageUrl = bufferToDataUrl(mimeType, req.file.buffer);
 
-            const filename = req.file.filename;
-            const fileUrl = generateFileUrl(filename);
-
-            // Update user's profile_image in DB with file path
-            await sql`UPDATE users SET profile_image = ${fileUrl}, updated_at = NOW() WHERE id = ${userId}`;
+            // Update user's profile_image in DB
+            await sql`UPDATE users SET profile_image = ${imageUrl}, updated_at = NOW() WHERE id = ${userId}`;
 
             res.json({
                 success: true,
                 message: 'Profile image uploaded successfully',
-                imageUrl: fileUrl
+                imageUrl: imageUrl
             });
         } catch (error) {
             console.error('Error uploading profile image:', error);

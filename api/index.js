@@ -86,6 +86,8 @@ const initializeDatabase = async () => {
   }
 };
 
+// No static file serving needed - all images stored as base64 in database
+
 // Initialize database on first request
 app.use(async (req, res, next) => {
   await initializeDatabase();
