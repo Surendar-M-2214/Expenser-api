@@ -1,6 +1,6 @@
 import multer from 'multer';
 import csv from 'csv-parser';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import { gemini } from '../config/gemini.js';
 import { sql } from '../config/db.js';
 import { Readable } from 'stream';
@@ -67,12 +67,38 @@ async function parseCSV(buffer) {
 }
 
 // Helper function to parse Excel
-function parseExcel(buffer) {
+async function parseExcel(buffer) {
   try {
-    const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = xlsx.utils.sheet_to_json(worksheet);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    
+    const worksheet = workbook.worksheets[0];
+    const jsonData = [];
+    
+    // Get headers from first row
+    const headers = [];
+    worksheet.getRow(1).eachCell((cell, colNumber) => {
+      headers[colNumber] = cell.value;
+    });
+    
+    // Convert rows to JSON objects
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+      
+      const rowData = {};
+      row.eachCell((cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          rowData[header] = cell.value;
+        }
+      });
+      
+      // Only add row if it has data
+      if (Object.keys(rowData).length > 0) {
+        jsonData.push(rowData);
+      }
+    });
+    
     return jsonData;
   } catch (error) {
     console.error('Error parsing Excel file:', error);
@@ -228,7 +254,7 @@ export const uploadFile = [
         processedData = await processFileWithAI(fileContent, 'csv', file.originalname);
       } else if (fileType === 'application/vnd.ms-excel' || 
                  fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-        fileContent = parseExcel(file.buffer);
+        fileContent = await parseExcel(file.buffer);
         processedData = await processFileWithAI(fileContent, 'excel', file.originalname);
       } else if (fileType === 'application/pdf') {
         try {
