@@ -19,8 +19,9 @@ const port = process.env.PORT || 3000;
 // Initialize Express app
 const app = express();
 
-// Middleware to parse JSON bodies
-app.use(express.json());
+// Middleware to parse JSON bodies with increased size limit
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // CORS configuration
 app.use(cors({
@@ -76,6 +77,18 @@ app.use('*', (req, res) => {
         error: 'Route not found',
         details: `The requested route ${req.originalUrl} was not found on this server`
     });
+});
+
+// Handle 413 Payload Too Large errors specifically
+app.use((error, req, res, next) => {
+    if (error.type === 'entity.too.large') {
+        return res.status(413).json({
+            success: false,
+            error: 'Payload Too Large',
+            details: 'Request body size exceeds the maximum allowed limit of 10MB. Please reduce the size of your data and try again.'
+        });
+    }
+    next(error);
 });
 
 // Global error handler to ensure JSON responses
