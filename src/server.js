@@ -23,6 +23,9 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+// Serve static files from uploads directory
+app.use('/uploads', express.static('uploads'));
+
 // CORS configuration
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:19006', 'exp://192.168.1.100:8081'],

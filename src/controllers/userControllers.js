@@ -1,48 +1,118 @@
 import { sql } from "../config/db.js";
 import { clerkClient } from '@clerk/express';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-// Configure multer to store files in memory
+// Get current directory for file storage
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, '../../uploads/profile-images');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer to store files on disk
 const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            cb(null, uploadsDir);
+        },
+        filename: (req, file, cb) => {
+            // Generate unique filename with timestamp
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            const ext = path.extname(file.originalname);
+            cb(null, `profile-${uniqueSuffix}${ext}`);
+        }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
-// Helper to convert buffer to data URL
-function bufferToDataUrl(mimeType, buffer) {
-    const base64 = buffer.toString('base64');
-    return `data:${mimeType};base64,${base64}`;
+// Helper to generate file URL
+function generateFileUrl(filename) {
+    return `/uploads/profile-images/${filename}`;
+}
+
+// Helper to delete old profile image file
+async function deleteOldProfileImage(userId) {
+    try {
+        const result = await sql`SELECT profile_image FROM users WHERE id = ${userId}`;
+        if (result.length > 0 && result[0].profile_image) {
+            const oldImagePath = result[0].profile_image;
+            // Only delete if it's a file path, not a data URL
+            if (!oldImagePath.startsWith('data:')) {
+                const fullPath = path.join(__dirname, '../../', oldImagePath);
+                if (fs.existsSync(fullPath)) {
+                    fs.unlinkSync(fullPath);
+                    console.log('Deleted old profile image:', fullPath);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error deleting old profile image:', error);
+        // Don't throw error, just log it
+    }
 }
 
 // POST /api/users/profile-image: Upload profile image and store as data URL in DB
 export const uploadProfileImage = [
     upload.single('image'),
+    // Multer error handler
+    (error, req, res, next) => {
+        if (error instanceof multer.MulterError) {
+            if (error.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({
+                    success: false,
+                    error: 'File too large',
+                    details: 'Image file size exceeds the maximum allowed limit of 10MB. Please select a smaller image.'
+                });
+            }
+        }
+        next(error);
+    },
     async function handleUpload(req, res) {
         try {
             const auth = await req.auth();
             const { userId } = auth || {};
 
             if (!userId) {
-                return res.status(401).json({ error: 'User not authenticated' });
+                return res.status(401).json({ 
+                    success: false,
+                    error: 'User not authenticated' 
+                });
             }
 
             if (!req.file) {
-                return res.status(400).json({ error: 'No image file provided' });
+                return res.status(400).json({ 
+                    success: false,
+                    error: 'No image file provided' 
+                });
             }
 
-            const mimeType = req.file.mimetype || 'image/jpeg';
-            const dataUrl = bufferToDataUrl(mimeType, req.file.buffer);
+            // Delete old profile image file
+            await deleteOldProfileImage(userId);
 
-            // Update user's profile_image in DB
-            await sql`UPDATE users SET profile_image = ${dataUrl}, updated_at = NOW() WHERE id = ${userId}`;
+            const filename = req.file.filename;
+            const fileUrl = generateFileUrl(filename);
+
+            // Update user's profile_image in DB with file path
+            await sql`UPDATE users SET profile_image = ${fileUrl}, updated_at = NOW() WHERE id = ${userId}`;
 
             res.json({
+                success: true,
                 message: 'Profile image uploaded successfully',
-                imageUrl: dataUrl
+                imageUrl: fileUrl
             });
         } catch (error) {
             console.error('Error uploading profile image:', error);
-            res.status(500).json({ error: 'Failed to upload profile image' });
+            res.status(500).json({ 
+                success: false,
+                error: 'Failed to upload profile image',
+                details: error.message 
+            });
         }
     }
 ];
@@ -355,14 +425,14 @@ export async function deleteUser(req, res) {
 }
 
 
-// PUT /api/users/profile: Update profile details in Clerk
+// PUT /api/users/profile: Update profile details in database only
 export async function updateProfile(req, res) {
     try {
         console.log('=== UPDATE PROFILE DEBUG ===');
         console.log('req.auth type:', typeof req.auth);
         console.log('req.headers.authorization:', req.headers.authorization ? 'Token present' : 'No token');
         
-        // Call req.auth() as a function (new Clerk API)
+        // Call req.auth() as a function (new Clerk API) - ONLY for authentication
         const auth = await req.auth();
         console.log('Auth result:', auth);
         
@@ -373,9 +443,9 @@ export async function updateProfile(req, res) {
         if (!userId) {
             console.log('ERROR: No userId found in req.auth');
             return res.status(401).json({ 
+                success: false,
                 error: 'User not authenticated',
-                auth: auth,
-                headers: req.headers
+                details: 'Authentication required to update profile'
             });
         }
 
@@ -392,61 +462,14 @@ export async function updateProfile(req, res) {
         
         if (!hasValidField) {
             return res.status(400).json({ 
+                success: false,
                 error: 'At least one field must be provided and not empty',
+                details: 'Please provide at least one field to update',
                 received: { firstName, lastName, phoneNumber, username, profile_image }
             });
         }
 
-        // Prepare update data for Clerk (only firstName, lastName, phoneNumber)
-        const clerkUpdateData = {};
-        if (firstName && firstName.trim() !== '') clerkUpdateData.firstName = firstName.trim();
-        if (lastName && lastName.trim() !== '') clerkUpdateData.lastName = lastName.trim();
-        if (phoneNumber && phoneNumber.trim() !== '') clerkUpdateData.phoneNumber = phoneNumber.trim();
-
-        // Update user in Clerk (if there are Clerk fields to update)
-        let updatedUser;
-        if (Object.keys(clerkUpdateData).length > 0) {
-            try {
-                updatedUser = await clerkClient.users.updateUser(userId, clerkUpdateData);
-                console.log('Updated Clerk user with:', clerkUpdateData);
-            } catch (clerkError) {
-                console.error('Clerk update error:', clerkError);
-                // Don't fail the entire request if Clerk update fails
-                // We'll still try to update the database
-                try {
-                    updatedUser = await clerkClient.users.getUser(userId);
-                } catch (getUserError) {
-                    console.error('Failed to get user from Clerk:', getUserError);
-                    // Create a minimal user object if we can't get from Clerk
-                    updatedUser = {
-                        id: userId,
-                        firstName: firstName || '',
-                        lastName: lastName || '',
-                        emailAddresses: [],
-                        phoneNumbers: [],
-                        imageUrl: ''
-                    };
-                }
-            }
-        } else {
-            // If no Clerk fields to update, just get the current user
-            try {
-                updatedUser = await clerkClient.users.getUser(userId);
-            } catch (getUserError) {
-                console.error('Failed to get user from Clerk:', getUserError);
-                // Create a minimal user object if we can't get from Clerk
-                updatedUser = {
-                    id: userId,
-                    firstName: firstName || '',
-                    lastName: lastName || '',
-                    emailAddresses: [],
-                    phoneNumbers: [],
-                    imageUrl: ''
-                };
-            }
-        }
-        
-        // Update database with profile changes
+        // Update database with profile changes - DATABASE IS THE SINGLE SOURCE OF TRUTH
         const dbUpdateFields = [];
         const dbUpdateValues = [];
         
@@ -474,40 +497,69 @@ export async function updateProfile(req, res) {
         // Always update the updated_at timestamp
         dbUpdateFields.push('updated_at = NOW()');
         
-        // Update database if there are fields to update
+        // Update database - THIS IS THE ONLY PLACE WE STORE PROFILE DATA
         if (dbUpdateFields.length > 1) { // More than just updated_at
             try {
-                const updateQuery = `
-                    UPDATE users 
-                    SET ${dbUpdateFields.join(', ')} 
-                    WHERE id = $${dbUpdateValues.length + 1}
-                `;
+                // Build the query using tagged template literal
+                const query = `UPDATE users SET ${dbUpdateFields.join(', ')} WHERE id = $${dbUpdateValues.length + 1}`;
                 dbUpdateValues.push(userId);
                 
-                console.log('Updating database with:', { updateQuery, dbUpdateValues });
-                await sql(updateQuery, dbUpdateValues);
+                console.log('Updating database with:', { query, dbUpdateValues });
+                
+                // Use sql.query for parameterized queries
+                await sql.query(query, dbUpdateValues);
                 console.log('Database updated successfully for user:', userId);
             } catch (dbError) {
                 console.error('Database update error:', dbError);
-                // Don't fail the entire request if database update fails
-                // Clerk update was successful, so we'll log the error but continue
-                // We'll still return success since Clerk update worked
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Database update failed',
+                    details: 'Failed to update profile in database'
+                });
             }
         }
         
-        console.log('Profile updated successfully for user:', userId);
-        
-        res.json({
-            message: 'Profile updated successfully',
-            user: {
-                id: updatedUser.id,
-                firstName: updatedUser.firstName,
-                lastName: updatedUser.lastName,
-                emailAddresses: updatedUser.emailAddresses,
-                phoneNumbers: updatedUser.phoneNumbers,
-                imageUrl: updatedUser.imageUrl
+        // Get updated profile data from database - SINGLE SOURCE OF TRUTH
+        try {
+            const updatedProfile = await sql`
+                SELECT 
+                    id,
+                    first_name as "firstName",
+                    last_name as "lastName", 
+                    username,
+                    phone_number as "phoneNumber",
+                    profile_image as "profileImage",
+                    email,
+                    created_at as "createdAt",
+                    updated_at as "updatedAt"
+                FROM users 
+                WHERE id = ${userId}
+            `;
+            
+            if (updatedProfile.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'User not found',
+                    details: 'User profile not found in database'
+                });
             }
-        });
+            
+            console.log('Profile updated successfully for user:', userId);
+            
+            res.json({
+                success: true,
+                message: 'Profile updated successfully',
+                user: updatedProfile[0]
+            });
+            
+        } catch (fetchError) {
+            console.error('Error fetching updated profile:', fetchError);
+            return res.status(500).json({
+                success: false,
+                error: 'Profile update successful but failed to fetch updated data',
+                details: 'Profile was updated but could not retrieve the updated information'
+            });
+        }
 
     } catch (error) {
         console.error('Error updating profile:', error);
@@ -538,14 +590,6 @@ export async function updateProfile(req, res) {
             });
         }
         
-        if (error.name === 'ClerkError') {
-            return res.status(500).json({ 
-                success: false,
-                error: 'Authentication service error',
-                details: 'Failed to update profile in authentication service' 
-            });
-        }
-        
         // Generic error response
         return res.status(500).json({ 
             success: false,
@@ -555,12 +599,12 @@ export async function updateProfile(req, res) {
     }
 }
 
-// GET /api/users/profile: Get user profile from database
+// GET /api/users/profile: Get user profile from database only
 export async function getUserProfile(req, res) {
     try {
         console.log('=== GET USER PROFILE DEBUG ===');
         
-        // Call req.auth() as a function (new Clerk API)
+        // Call req.auth() as a function (new Clerk API) - ONLY for authentication
         const auth = await req.auth();
         console.log('Auth result:', auth);
         
