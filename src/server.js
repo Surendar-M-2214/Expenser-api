@@ -59,6 +59,16 @@ app.get("/", async (req, res) => {
     res.send("<h1 style='color:blue;text-align:center;font-size:30px;'>Welcome to the Transactions API</h1>");
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+    res.json({
+        success: true,
+        message: "API is running",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0"
+    });
+});
+
 app.use("/api/users", usersRoute);
 app.use("/api/users/:id/transactions", (req, res, next) => {
   // Store the user ID from the parent route so it's available in child routes

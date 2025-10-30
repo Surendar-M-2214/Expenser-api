@@ -12,9 +12,11 @@ export   const ratelimiter = async (req, res, next) => {
                 next()
                 // console.log(res)
             } catch (error) {
-                console.log(error)
-                next(error)
-                return res.status(500).json({ message: "Internal server error" })
+                console.error(error)
+                // Gracefully bypass rate limiting if the provider is unreachable
+                // Avoid sending a response after calling next() to prevent ERR_HTTP_HEADERS_SENT
+                res.setHeader("X-RateLimit-Bypass", "true")
+                return next()
                
             }
   
