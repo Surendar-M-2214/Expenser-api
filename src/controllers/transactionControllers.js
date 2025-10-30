@@ -1,17 +1,26 @@
 import { sql } from "../config/db.js";
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
-// Configure multer to store files in memory
+// Ensure receipts upload directory exists
+const receiptsDir = path.join(process.cwd(), 'uploads', 'receipts');
+try { fs.mkdirSync(receiptsDir, { recursive: true }); } catch {}
+
+// Configure multer to store receipt files on disk (serving via /uploads)
 const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, receiptsDir),
+        filename: (_req, file, cb) => {
+            const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+            const filename = `receipt_${Date.now()}${ext}`;
+            cb(null, filename);
+        }
+    }),
     limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
 
-// Helper to convert buffer to data URL
-function bufferToDataUrl(mimeType, buffer) {
-    const base64 = buffer.toString('base64');
-    return `data:${mimeType};base64,${base64}`;
-}
+// No longer embedding base64; storing disk path instead
 
 // GET /api/users/:id/transactions: Fetch all transactions for a user
 export async function getTransactions(req, res) {
@@ -210,9 +219,9 @@ export const createTransaction = [
             let receiptFilename = null;
             
             if (req.file) {
-                const mimeType = req.file.mimetype || 'image/jpeg';
-                receiptUrl = bufferToDataUrl(mimeType, req.file.buffer);
-                receiptFilename = req.file.originalname || `receipt_${Date.now()}.jpg`;
+                receiptFilename = req.file.filename || `receipt_${Date.now()}.jpg`;
+                // Static serving configured at /uploads → 'uploads' directory
+                receiptUrl = `/uploads/receipts/${receiptFilename}`;
             }
 
             // Normalize optional fields to match DB types
