@@ -188,8 +188,9 @@ export const createTransaction = [
             
             const { amount, currency, type, category, tags, description, reference, transaction_date } = req.body;
 
-            // Validate required fields: amount must be a positive number
-            if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+            // Normalize and validate amount
+            const amountNum = Number.parseFloat(amount);
+            if (!amount || Number.isNaN(amountNum) || amountNum <= 0) {
                 return res.status(400).json({ error: "Amount is required and must be a positive number" });
             }
 
@@ -214,16 +215,43 @@ export const createTransaction = [
                 receiptFilename = req.file.originalname || `receipt_${Date.now()}.jpg`;
             }
 
-            // Set default values for optional fields
-            const currencyValue = currency || 'INR';
-            const tagsValue = tags || [];
+            // Normalize optional fields to match DB types
+            const currencyValue = (currency && String(currency).trim()) || 'INR';
+            const categoryValue = category ? String(category) : null;
+            const referenceValue = reference ? String(reference) : null;
+            const descriptionValue = description ? String(description) : null;
+
+            // tags can arrive as array, JSON string, or comma-separated string
+            let tagsValue = [];
+            if (Array.isArray(tags)) {
+                tagsValue = tags.map(String);
+            } else if (typeof tags === 'string') {
+                try {
+                    const parsed = JSON.parse(tags);
+                    tagsValue = Array.isArray(parsed) ? parsed.map(String) : [];
+                } catch (_) {
+                    tagsValue = tags
+                        .split(',')
+                        .map(t => t.trim())
+                        .filter(Boolean);
+                }
+            }
+
+            // Ensure date is a valid YYYY-MM-DD string (DATE column)
+            const txDate = transaction_date
+                ? new Date(transaction_date)
+                : new Date();
+            const transactionDateValue = Number.isNaN(txDate.getTime())
+                ? new Date()
+                : txDate;
+            const dateStr = transactionDateValue.toISOString().split('T')[0];
 
             // Insert new transaction into the database
             const transaction = await sql`
                 INSERT INTO user_transactions (
                     user_id, amount, currency, type, category, tags, description, reference, receipt_url, receipt_filename, transaction_date
                 ) VALUES (
-                    ${userId}, ${amount}, ${currencyValue}, ${type}, ${category}, ${tagsValue}, ${description}, ${reference}, ${receiptUrl}, ${receiptFilename}, ${transaction_date || new Date().toISOString().split('T')[0]}
+                    ${userId}, ${amountNum}, ${currencyValue}, ${type}, ${categoryValue}, ${tagsValue}, ${descriptionValue}, ${referenceValue}, ${receiptUrl}, ${receiptFilename}, ${dateStr}
                 ) RETURNING *
             `;
             
