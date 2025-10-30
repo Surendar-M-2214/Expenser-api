@@ -1,26 +1,17 @@
 import { sql } from "../config/db.js";
 import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
 
-// Ensure receipts upload directory exists
-const receiptsDir = path.join(process.cwd(), 'uploads', 'receipts');
-try { fs.mkdirSync(receiptsDir, { recursive: true }); } catch {}
-
-// Configure multer to store receipt files on disk (serving via /uploads)
+// Configure multer to store files in memory (serverless-safe)
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, receiptsDir),
-        filename: (_req, file, cb) => {
-            const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
-            const filename = `receipt_${Date.now()}${ext}`;
-            cb(null, filename);
-        }
-    }),
+    storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 } // 5MB
 });
 
-// No longer embedding base64; storing disk path instead
+// Helper to convert buffer to data URL (serverless-safe, like profile upload)
+function bufferToDataUrl(mimeType, buffer) {
+    const base64 = buffer.toString('base64');
+    return `data:${mimeType};base64,${base64}`;
+}
 
 // GET /api/users/:id/transactions: Fetch all transactions for a user
 export async function getTransactions(req, res) {
@@ -219,9 +210,9 @@ export const createTransaction = [
             let receiptFilename = null;
             
             if (req.file) {
-                receiptFilename = req.file.filename || `receipt_${Date.now()}.jpg`;
-                // Static serving configured at /uploads → 'uploads' directory
-                receiptUrl = `/uploads/receipts/${receiptFilename}`;
+                const mimeType = req.file.mimetype || 'image/jpeg';
+                receiptUrl = bufferToDataUrl(mimeType, req.file.buffer);
+                receiptFilename = req.file.originalname || `receipt_${Date.now()}.jpg`;
             }
 
             // Normalize optional fields to match DB types
@@ -347,54 +338,89 @@ export async function bulkDeleteTransactions(req, res) {
 
 
 // PUT /api/users/:id/transactions/:transaction_id: Update a single transaction by ID
-export async function updateTransaction(req, res) {
-    try {
-        const { transaction_id } = req.params;
-        const { amount, currency, type, category, tags, reference, description, transaction_date } = req.body;
-        
-        // Update the transaction
-        await sql`
-            UPDATE user_transactions 
-            SET 
-                amount = ${amount}, 
-                currency = ${currency || 'INR'}, 
-                type = ${type}, 
-                category = ${category}, 
-                tags = ${tags || []}, 
-                reference = ${reference || ''}, 
-                description = ${description || ''},
-                transaction_date = ${transaction_date || new Date().toISOString().split('T')[0]}
-            WHERE id = ${transaction_id}
-        `;
-        
-        // Fetch and return the updated transaction
-        const updatedTransaction = await sql`
-            SELECT 
-                id, 
-                amount, 
-                currency, 
-                type, 
-                category, 
-                tags, 
-                reference, 
-                description,
-                transaction_date,
-                created_at,
-                updated_at
-            FROM user_transactions 
-            WHERE id = ${transaction_id}
-        `;
-        
-        res.json({
-            success: true,
-            data: updatedTransaction[0]
-        });
+export const updateTransaction = [
+    upload.single('receipt'),
+    async function handleUpdateTransaction(req, res) {
+        try {
+            const { transaction_id } = req.params;
+            const { amount, currency, type, category, tags, reference, description, transaction_date, remove_receipt } = req.body;
+
+            // Normalize fields similar to create
+            const amountNum = amount !== undefined && amount !== null && amount !== '' ? Number.parseFloat(amount) : undefined;
+            const currencyValue = currency ? String(currency).trim() : undefined;
+            const categoryValue = category !== undefined ? (category ? String(category) : null) : undefined;
+            const referenceValue = reference !== undefined ? (reference ? String(reference) : null) : undefined;
+            const descriptionValue = description !== undefined ? (description ? String(description) : null) : undefined;
+
+            let tagsValue = undefined;
+            if (tags !== undefined) {
+                if (Array.isArray(tags)) tagsValue = tags.map(String);
+                else if (typeof tags === 'string') {
+                    try {
+                        const parsed = JSON.parse(tags);
+                        tagsValue = Array.isArray(parsed) ? parsed.map(String) : [];
+                    } catch (_) {
+                        tagsValue = tags.split(',').map(t => t.trim()).filter(Boolean);
+                    }
+                } else {
+                    tagsValue = [];
+                }
+            }
+
+            let dateStr;
+            if (transaction_date !== undefined) {
+                const dt = transaction_date ? new Date(transaction_date) : new Date();
+                const valid = Number.isNaN(dt.getTime()) ? new Date() : dt;
+                dateStr = valid.toISOString().split('T')[0];
+            }
+
+            // Manage receipt changes
+            let receiptUrlUpdate;
+            let receiptFilenameUpdate;
+            const shouldRemoveReceipt = String(remove_receipt || '').toLowerCase() === 'true';
+
+            if (req.file) {
+                const mimeType = req.file.mimetype || 'image/jpeg';
+                receiptUrlUpdate = bufferToDataUrl(mimeType, req.file.buffer);
+                receiptFilenameUpdate = req.file.originalname || `receipt_${Date.now()}.jpg`;
+            } else if (shouldRemoveReceipt) {
+                receiptFilenameUpdate = null;
+                receiptUrlUpdate = null;
+            }
+
+            // Build dynamic SET clause
+            const updates = [];
+            if (amountNum !== undefined) updates.push(sql`amount = ${amountNum}`);
+            if (currencyValue !== undefined) updates.push(sql`currency = ${currencyValue || 'INR'}`);
+            if (type !== undefined) updates.push(sql`type = ${type}`);
+            if (categoryValue !== undefined) updates.push(sql`category = ${categoryValue}`);
+            if (tagsValue !== undefined) updates.push(sql`tags = ${tagsValue}`);
+            if (referenceValue !== undefined) updates.push(sql`reference = ${referenceValue}`);
+            if (descriptionValue !== undefined) updates.push(sql`description = ${descriptionValue}`);
+            if (dateStr !== undefined) updates.push(sql`transaction_date = ${dateStr}`);
+            if (receiptFilenameUpdate !== undefined) updates.push(sql`receipt_filename = ${receiptFilenameUpdate}`);
+            if (receiptUrlUpdate !== undefined) updates.push(sql`receipt_url = ${receiptUrlUpdate}`);
+
+            if (updates.length === 0) {
+                return res.status(400).json({ success: false, error: 'No fields to update' });
+            }
+
+            await sql`
+                UPDATE user_transactions
+                SET ${sql.join(updates, sql`, `)}
+                WHERE id = ${transaction_id}
+            `;
+
+            const updated = await sql`
+                SELECT id, user_id, amount, currency, type, category, tags, reference, description, receipt_url, receipt_filename, transaction_date, created_at, updated_at
+                FROM user_transactions
+                WHERE id = ${transaction_id}
+            `;
+
+            res.json({ success: true, data: updated[0] });
+        } catch (error) {
+            console.error("Error updating transaction", error);
+            res.status(500).json({ success: false, error: "Failed to update transaction" });
+        }
     }
-    catch (error) {
-        console.error("Error updating transaction", error);
-        res.status(500).json({ 
-            success: false,
-            error: "Failed to update transaction" 
-        });
-    }
-}
+];

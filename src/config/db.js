@@ -13,7 +13,7 @@ export async function initDB() {
                 last_name VARCHAR(255),
                 email VARCHAR(255) NOT NULL,
                 phone_number VARCHAR(20),
-                profile_image VARCHAR(500),
+                profile_image TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
@@ -31,7 +31,7 @@ export async function initDB() {
                 tags TEXT[] NOT NULL DEFAULT '{}'::text[],
                 description VARCHAR(128),
                 reference VARCHAR(64),
-                receipt_url VARCHAR(500),
+                receipt_url TEXT,
                 receipt_filename VARCHAR(255),
                 transaction_date DATE NOT NULL DEFAULT CURRENT_DATE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
