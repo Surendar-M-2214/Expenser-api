@@ -1,6 +1,6 @@
 import multer from 'multer';
 import csv from 'csv-parser';
-import xlsx from 'xlsx';
+import ExcelJS from 'exceljs';
 import { gemini } from '../config/gemini.js';
 import { sql } from '../config/db.js';
 import { Readable } from 'stream';
@@ -66,14 +66,32 @@ async function parseCSV(buffer) {
   });
 }
 
-// Helper function to parse Excel
-function parseExcel(buffer) {
+// Helper function to parse Excel (ExcelJS)
+async function parseExcel(buffer) {
   try {
-    const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = xlsx.utils.sheet_to_json(worksheet);
-    return jsonData;
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) return [];
+
+    // Build rows as objects using the first row as header
+    const rows = [];
+    let headers = [];
+    worksheet.eachRow((row, rowNumber) => {
+      const values = row.values; // note: values[0] is undefined; data starts at 1
+      const arr = Array.isArray(values) ? values.slice(1) : [];
+      if (rowNumber === 1) {
+        headers = arr.map((h) => String(h || '').trim());
+      } else {
+        const obj = {};
+        for (let i = 0; i < headers.length; i++) {
+          const key = headers[i] || `col_${i + 1}`;
+          obj[key] = arr[i] ?? null;
+        }
+        rows.push(obj);
+      }
+    });
+    return rows;
   } catch (error) {
     console.error('Error parsing Excel file:', error);
     throw new Error('Failed to parse Excel file');
@@ -217,7 +235,7 @@ export const uploadFile = [
         processedData = await processFileWithAI(fileContent, 'csv', file.originalname);
       } else if (fileType === 'application/vnd.ms-excel' || 
                  fileType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
-        fileContent = parseExcel(file.buffer);
+        fileContent = await parseExcel(file.buffer);
         processedData = await processFileWithAI(fileContent, 'excel', file.originalname);
       } else if (fileType === 'application/pdf') {
         try {
