@@ -35,10 +35,8 @@ export async function getTransactions(req, res) {
                 amount,
                 currency,
                 type,
-                status,
                 category,
                 tags,
-                merchant,
                 reference,
                 description,
                 transaction_date,
@@ -315,7 +313,7 @@ export async function bulkDeleteTransactions(req, res) {
 export async function updateTransaction(req, res) {
     try {
         const { transaction_id } = req.params;
-        const { amount, currency, type, status, category, tags, merchant, reference, description, transaction_date } = req.body;
+        const { amount, currency, type, category, tags, reference, description, transaction_date } = req.body;
         
         // Update the transaction
         await sql`
@@ -324,10 +322,8 @@ export async function updateTransaction(req, res) {
                 amount = ${amount}, 
                 currency = ${currency || 'INR'}, 
                 type = ${type}, 
-                status = ${status || 'completed'}, 
                 category = ${category}, 
                 tags = ${tags || []}, 
-                merchant = ${merchant || ''}, 
                 reference = ${reference || ''}, 
                 description = ${description || ''},
                 transaction_date = ${transaction_date || new Date().toISOString().split('T')[0]}
@@ -341,10 +337,8 @@ export async function updateTransaction(req, res) {
                 amount, 
                 currency, 
                 type, 
-                status, 
                 category, 
                 tags, 
-                merchant, 
                 reference, 
                 description,
                 transaction_date,
