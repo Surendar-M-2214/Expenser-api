@@ -35,7 +35,6 @@ export async function getTransactions(req, res) {
                 amount,
                 currency,
                 type,
-                status,
                 category,
                 tags,
                 merchant,
